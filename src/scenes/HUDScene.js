@@ -44,7 +44,7 @@ export class HUDScene extends Phaser.Scene {
     this.portraits = [];
     this.makePortrait(this.p, 70, 60, 1);
     const es = this.enemies();
-    if (es.length === 1) this.makePortrait(es[0], 1210, 60, -1);
+    this.ePortrait = this.makePortrait(es[0], 1210, 60, -1);
     // barra de habilidades
     this.slotTexts = [];
     const lo = this.p.loadout;
@@ -83,7 +83,9 @@ export class HUDScene extends Phaser.Scene {
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff); mg.fillCircle(x, y, 40);
     const mask = mg.createGeometryMask();
     prev.g.setMask(mask); prev.glow.setMask(mask);
-    this.portraits.push({ f, prev, x, y });
+    const pr = { f, prev, x, y };
+    this.portraits.push(pr);
+    return pr;
   }
 
   onBev(e) {
@@ -271,6 +273,11 @@ export class HUDScene extends Phaser.Scene {
     // entrenamiento
     if (b.training) this.trainingInfo();
     if (Save.d.settings.showFps) T.fps.setText(Math.round(this.game.loop.actualFps) + ' FPS'); else T.fps.setText('');
+    if (this.ePortrait) {
+      const one = es.length === 1;
+      this.ePortrait.prev.g.setVisible(one); this.ePortrait.prev.glow.setVisible(one);
+      if (one && this.ePortrait.f !== es[0]) this.ePortrait.f = es[0];
+    }
     for (const pr of this.portraits) { pr.prev.profile = pr.f.profile; pr.prev.anim = pr.f.alive ? (pr.f.auraPct < 0.3 ? 'hurt' : 'guard') : 'ko'; pr.prev.update(); }
     // borde de peligro
     if (p.auraPct < 0.25 && p.alive) { g.lineStyle(14, 0xff0033, 0.12 + Math.sin(this.t * 0.15) * 0.08); g.strokeRect(0, 0, 1280, 720); }

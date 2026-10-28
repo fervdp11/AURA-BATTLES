@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import '@fontsource/anton/latin-400.css';
 import '@fontsource/rubik/latin-500.css';
 import '@fontsource/rubik/latin-700.css';
+import './view/GraphicsPatch.js';
 import { BootScene } from './scenes/BootScene.js';
 import { DemoScene } from './scenes/DemoScene.js';
 import { MenuScene } from './scenes/MenuScene.js';

@@ -210,10 +210,6 @@ export class AIController {
       const reach = d.ai.range[1] + 40;
       const threat = this.pdist < reach || d.slot === 'ult' || (d.ai.role === 'zone' && !d.proj);
       if (!threat) return false;
-      const key = o.move + ':' + (o.mf - (b.frame - snap.frame));
-      const newThreat = this.lastThreatId !== o.move + o.id + (opp.move ? opp.move.f > o.mf ? '' : 'n' : '');
-      this.lastThreatId = o.move + o.id;
-      void key; void newThreat;
       return this.react(inp, d, o);
     }
     // salto del rival => antiaéreo
@@ -467,7 +463,7 @@ export class AIController {
       if (role === 'feint' && !this.chance(L.feint * 3)) continue;
       if (!token && ['poke', 'pressure', 'gap', 'grab', 'heavy', 'low', 'overhead'].includes(role)) continue;
       const base = { zone: 1.6, poke: 1.3, pressure: 1.4, gap: 1.2, buff: 1.6, counter: 0.9, debuff: 1.3, trap: 1.0, heavy: 1.1, low: 1.1, overhead: 1.1, grab: 1.2, dodge: 0.4, escape: hp < 0.5 ? 1.0 : 0.3, humiliate: 0.3, finisher: 0.4, copy: 1.0, feint: 0.8 }[role] ?? 0.6;
-      add(base * this.w(role) * (0.4 + L.special), () => this.useMove(inp, id), 'sp:' + id);
+      add(base * this.w(role) * (0.6 + L.special) * 1.35, () => this.useMove(inp, id), 'sp:' + id);
     }
 
     // básicos

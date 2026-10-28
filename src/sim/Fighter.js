@@ -583,7 +583,7 @@ export class Fighter {
     if (this.state === 'attack' && this.move) {
       const d = this.move.def;
       if (d.on && d.on.land) { d.on.land(this, this.b, this.move); return; }
-      if (d.air) { this.move = null; this.setState('idle'); this.landLag = 4; }
+      if (d.air) { this.move = null; this.setState('idle'); }
     } else if (this.state === 'air' || this.state === 'dash') {
       this.setState('idle');
     }

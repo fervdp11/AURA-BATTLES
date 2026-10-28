@@ -107,7 +107,7 @@ export class FX {
   }
   number(x, y, val, color = '#ffffff', big = false) {
     const t = this.s.add.text(x + (Math.random() - 0.5) * 30, y, String(Math.round(val)), {
-      fontFamily: FONT, fontSize: (big ? 30 : 20) + 'px', color, stroke: '#000', strokeThickness: 4
+      fontFamily: FONT, fontSize: (big ? 38 : 26) + 'px', color, stroke: '#000', strokeThickness: 5
     }).setOrigin(0.5).setDepth(61);
     this.s.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 700, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
   }

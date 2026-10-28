@@ -72,7 +72,7 @@ export class Battle {
   drainEvents() { const e = this.events; this.events = []; return e; }
 
   get player() { return this.fighters.find(f => f.isHuman) || this.fighters[0]; }
-  alive(team) { return this.fighters.filter(f => f.alive && (team === undefined || f.team === team)); }
+  alive(team) { return this.fighters.filter(f => f.alive && !f.decoyOf && (team === undefined || f.team === team)); }
   enemiesOf(f) { return this.fighters.filter(o => o.alive && o.team !== f.team && !o.decoyOf); }
 
   targetFor(f) {

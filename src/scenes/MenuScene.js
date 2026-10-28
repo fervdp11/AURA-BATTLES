@@ -36,7 +36,7 @@ export class MenuScene extends Phaser.Scene {
     // panel de perfil
     const r = rankFor(d.rankPoints);
     panel(this, 860, 120, 360, 470, { alpha: 0.72 });
-    this.preview = new StickPreview(this, 1040, 470, playerProfile(), { scale: 1.75, anim: 'guard', depth: 6 });
+    this.preview = new StickPreview(this, 1040, 500, playerProfile(), { scale: 1.45, anim: 'guard', depth: 6 });
     txt(this, 1040, 140, d.profile.name, 34, '#ffffff', { ox: 0.5 });
     txt(this, 1040, 182, r.name.toUpperCase() + (d.prestige ? `  ·  ★${d.prestige}` : ''), 24, r.color, { ox: 0.5 });
     const bar = this.add.graphics();
