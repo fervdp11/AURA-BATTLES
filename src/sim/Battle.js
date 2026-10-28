@@ -187,6 +187,8 @@ export class Battle {
       return;
     }
     if (this.phase === 'over') {
+      // el perdedor se levanta del suelo y encaja la derrota (arrodillado, hundido, rabieta o encogerse de hombros)
+      if (this.phaseT === 60) for (const f of this.fighters) if (f.team !== this.winnerTeam && !f.decoyOf && f.grounded && (f.state === 'ko' || f.state === 'knockdown')) this.setDefeat(f);
       if (this.phaseT === 200) this.emit('matchEnd', { result: this.result });
     }
   }
@@ -218,6 +220,13 @@ export class Battle {
     }
   }
 
+  setDefeat(f) {
+    const list = ['kneel', 'slump', 'rage', 'shrug'];
+    f.defeatAnim = list[(f.id * 7 + this.round) % list.length];
+    f.move = null; f.vx = 0;
+    f.setState('lose');
+  }
+
   endRound(reason) {
     if (this.phase !== 'fight') return;
     // por tiempo: gana el equipo con más aura relativa
@@ -225,7 +234,8 @@ export class Battle {
     const s0 = score(0), s1 = score(1);
     const loserTeam = s0 >= s1 ? 1 : 0;
     this.emit('announce', { text: '¡TIEMPO!', time: true });
-    for (const f of this.fighters) if (f.team === loserTeam && f.alive) { f.aura = 0; f.alive = false; f.setState('ko'); }
+    // por tiempo nadie sale volando: el perdedor se queda de pie y encaja la derrota
+    for (const f of this.fighters) if (f.team === loserTeam && f.alive) { f.aura = 0; f.alive = false; f.move = null; this.setDefeat(f); }
     this.lastKO = { f: this.fighters.find(f => f.team === loserTeam), attacker: null, final: true, time: true };
     this.phase = 'ko'; this.phaseT = 0;
     void reason;

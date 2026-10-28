@@ -297,7 +297,7 @@ export class Fighter {
         if (this.startX !== undefined && this.grounded) this.vx = Math.abs(this.startX - this.x) > 2 ? Math.sign(this.startX - this.x) * Math.min(3, Math.abs(this.startX - this.x) * 0.08) : 0;
         if (this.sf > 100) this.setState('idle');
         break;
-      case 'win': this.vx *= 0.8; break;
+      case 'win': case 'lose': this.vx *= 0.8; break;
       case 'idle': case 'block': ctrl ? this.controlled(ctrl) : this.neutral(); break;
       case 'air': ctrl ? null : this.airborne(); break;
       case 'dash': this.dashing(); break;
@@ -774,7 +774,7 @@ export class Fighter {
       copyPose(this.pose, this.blendFrom);
       this.blendT = 0;
       const prev = this.animKey;
-      this.blendDur = key.startsWith('m:') ? 3 : key.startsWith('hit') ? 2 : key === 'airhit' ? 3 : key.startsWith('idle') && prev.startsWith('idle') ? 7 : key === 'getup' ? 1 : 5;
+      this.blendDur = key.startsWith('m:') ? 3 : key.startsWith('hit') ? 2 : key === 'airhit' ? 3 : key.startsWith('idle') && prev.startsWith('idle') ? 7 : key === 'getup' ? 1 : key === 'lose' ? 16 : key === 'win' ? 8 : 5;
       this.animKey = key;
     }
     if (this.blendT < this.blendDur) { this.blendT++; lerpPose(this.blendFrom, tgt, easeInOut(this.blendT / this.blendDur), this.pose); }
