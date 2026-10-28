@@ -291,7 +291,11 @@ export class Fighter {
 
     const ctrl = this.controlStatus();
     switch (this.state) {
-      case 'intro': if (this.sf > 100) this.setState('idle'); this.vx = 0; break;
+      case 'intro':
+        // entrada: camina hasta su posición (los jefes caen del cielo)
+        if (this.startX !== undefined && this.grounded) this.vx = Math.abs(this.startX - this.x) > 2 ? Math.sign(this.startX - this.x) * Math.min(3, Math.abs(this.startX - this.x) * 0.08) : 0;
+        if (this.sf > 100) this.setState('idle');
+        break;
       case 'win': this.vx *= 0.8; break;
       case 'idle': case 'block': ctrl ? this.controlled(ctrl) : this.neutral(); break;
       case 'air': ctrl ? null : this.airborne(); break;
@@ -580,6 +584,7 @@ export class Fighter {
       return;
     }
     if (this.state === 'ko') return;
+    if (this.state === 'intro') { this.squashX = 1.25; this.squashY = 0.75; this.b.emit('land', { f: this, heavy: prevVy > 12 }); if (prevVy > 12) this.b.emit('bossLand', { f: this }); this.vx = 0; return; }
     if (this.state === 'attack' && this.move) {
       const d = this.move.def;
       if (d.on && d.on.land) { d.on.land(this, this.b, this.move); return; }
@@ -661,7 +666,12 @@ export class Fighter {
         if (c.mods) this.applyMods(c.mods, this.sf, out);
         return 'win';
       }
-      case 'intro': copyPose(POSES.strut, out); if (this.sf < 60) { MODS.slowWalk(out, this.sf * 1.5); MODS.strutArms(out, this.sf * 1.5); } else MODS.breathe(out, f); return 'intro';
+      case 'intro':
+        if (!this.grounded) { copyPose(POSES.fall, out); return 'introAir'; }
+        if (this.lastLand && this.b.frame - this.lastLand < 30) { copyPose(POSES.heroLand, out); return 'introLand'; }
+        copyPose(POSES.strut, out);
+        if (Math.abs(this.vx) > 0.3) { MODS.slowWalk(out, this.sf * 1.5); MODS.strutArms(out, this.sf * 1.5); } else MODS.breathe(out, f);
+        return 'intro';
     }
     copyPose(POSES.idle, out);
     return 'x';

@@ -5,6 +5,7 @@ import { txt, StickPreview, MenuBG, go, fadeIn, keyHints } from '../ui/UI.js';
 import { playerProfile, botProfile } from '../core/Match.js';
 import { LEVELS, STYLES } from '../sim/AI.js';
 import { Save } from '../core/Save.js';
+import { TIPS } from '../data/tips.js';
 
 // Pantalla de presentación previa al combate
 export class VersusScene extends Phaser.Scene {
@@ -53,6 +54,7 @@ export class VersusScene extends Phaser.Scene {
     this.pop = Input.push(a => { if (a === 'confirm') this.start(); if (a === 'back') { this.done = true; go(this, 'Menu'); } });
     this.events.once('shutdown', () => this.pop && this.pop());
     keyHints(this, 'ENTER empezar · ESC cancelar');
+    txt(this, 640, 40 + (spec.pathTitle ? 26 : 0) + (spec.boss || es.some(e => e.boss) ? 60 : 0), 'CONSEJO: ' + TIPS[Math.floor(Math.random() * TIPS.length)], 17, '#c9c3e6', { ox: 0.5, body: true, wrap: 1100, align: 'center' });
     fadeIn(this);
     this.t = 0;
   }

@@ -52,7 +52,6 @@ export class PathScene extends Phaser.Scene {
       color: s.boss ? '#ff4d6d' : undefined,
       onSelect: () => this.startStage(s)
     }));
-    this.add.rectangle(320, 400, 640, 560, 0x05030c, 0.0);
     this.stMenu = new MenuList(this, 660, 360, items, { w: 560, h: 46, gap: 6, size: 22, depth: 30, onBack: () => { this.stMenu.destroy(); this.stMenu = null; this.chMenu.active = true; }, onChange: it => void it });
     let first = items.findIndex((it, si) => !it.locked && !d.path.cleared[c.stages[si].id]);
     this.stMenu.idx = first >= 0 ? first : 0;

@@ -291,7 +291,7 @@ const P = s => s.replace(/\s/g, '');
 const TRACKS = {
   menu: {
     bpm: 96, bars: 4, root: 33, bassDist: 4, bellLevel: 0.14, padLevel: 0.045,
-    kick: [P('x...... ..x. ....'), P('x...... ...x ....')].map(s => s.padEnd(16, '.')),
+    kick: [P('x... .... ..x. ....'), P('x... .... ...x ....')],
     snare: [P('.... x... .... x...')],
     hat: [P('x.x. x.x. x.x. x.xr'), P('x.x. x.x. x.x. xqx.')],
     bass: [[[0, 0, 7], [10, 0, 4, -2]], [[0, -4, 7], [10, -4, 4]], [[0, 3, 7], [10, 3, 4]], [[0, -2, 7], [10, -2, 4, 0]]],

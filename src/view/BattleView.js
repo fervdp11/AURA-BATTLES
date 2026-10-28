@@ -487,6 +487,13 @@ export class BattleView {
       case 'jump': fx.dust(e.f.x, GROUND_Y, e.double ? 4 : 6); this.sfx('jump'); break;
       case 'land': fx.dust(e.f.x, GROUND_Y, e.heavy ? 14 : 8); this.sfx('land'); if (e.heavy) this.shake('medium'); break;
       case 'dash': fx.dust(e.f.x, GROUND_Y, 6, 0xcfc6b8, -e.f.facing * e.dir); this.sfx('dash'); break;
+      case 'bossLand': {
+        const f = e.f;
+        fx.groundWave(f.x, GROUND_Y - 4, this.lookFor(f).aura, 500); fx.dust(f.x, GROUND_Y, 30); fx.ring(f.x, f.y - 60, this.lookFor(f).aura, 3);
+        this.sfx('vineBoom'); this.sfx('explosion'); this.shake('mega'); this.arena.react('ooh', 2); this.sfx('crowdOoh');
+        fx.text(f.x, f.y - 280, f.name.toUpperCase(), { color: '#ff4d6d', size: 44, hold: 900 });
+        break;
+      }
       case 'wallbounce': case 'groundbounce': fx.dust(e.f.x, e.f.y, 12); fx.ring(e.f.x, e.f.y - 60, 0xffffff, 1.2); this.sfx('hitHeavy', { pitch: 0.7 }); this.shake('heavy'); break;
       case 'burst': {
         const look = this.lookFor(e.f);

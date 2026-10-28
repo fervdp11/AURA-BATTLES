@@ -214,7 +214,7 @@ export class AIController {
     }
     // salto del rival => antiaéreo
     if (!o.grounded && o.state === 'air' && this.pdist < 260 && o.vy > -4 && Math.sign(o.x - f.x) === f.facing) {
-      if (this.chance(L.antiAir * 0.35)) {
+      if (this.chance(L.antiAir * (0.35 + Math.min(0.4, this.habits.jumps * 0.04 * L.read)))) {
         const aa = this.findMove(['antiair'], this.dist);
         if (aa && this.dist < 140) { this.useMove(inp, aa); return true; }
         if (this.dist < 110 && this.chance(0.5)) { this.useMove(inp, 'uppercut'); return true; }
@@ -252,7 +252,9 @@ export class AIController {
     }
     // parry programado: disciplina = esperar al último momento (las fintas no lo engañan)
     const canParry = f.parryLock <= 0;
-    if (canParry && remain > 0 && this.chance(L.parry)) {
+    // los niveles altos leen hábitos: si repites una técnica, la parrean con más facilidad
+    const rep = Math.min(0.35, (this.habits.repeat[d.id] || 0) * 0.035 * L.read);
+    if (canParry && remain > 0 && this.chance(L.parry + rep)) {
       const wait = Math.max(0, remain - Math.round(PARRY_WINDOW * (0.3 + 0.5 * L.discipline)));
       const early = this.chance(1 - L.discipline) ? Math.min(wait, Math.round(this.r() * 8)) : 0;
       const at = b.frame + wait - early;

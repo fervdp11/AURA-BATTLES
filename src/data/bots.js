@@ -172,7 +172,7 @@ function make(r, i, boss) {
   return {
     id: (boss ? 'boss_' : 'bot_') + i, name, style, level, accessory, color, aura, quote,
     accent: accents[h % accents.length], celebration: celebration || 'flex',
-    scale: scale || 1, boss: !!boss, maxAura: boss ? Math.round(1000 * (1.3 + level * 0.07)) : 1000,
+    scale: scale || 1, boss: !!boss, maxAura: boss ? Math.round(1000 * (1.25 + level * 0.04)) : 1000,
     loadout: buildLoadout(name, style, Math.min(6, level + (boss ? 1 : 0)))
   };
 }

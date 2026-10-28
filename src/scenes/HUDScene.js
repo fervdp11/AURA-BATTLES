@@ -76,6 +76,57 @@ export class HUDScene extends Phaser.Scene {
     for (const k in this.handlers) fe.on(k, this.handlers[k]);
     this.events.once('shutdown', () => { for (const k in this.handlers) fe.off(k, this.handlers[k]); for (const p of this.portraits) p.prev.destroy(); });
     if (b.opts.mode === 'survival') this.texts.wave.setText('OLEADA 1');
+    // tutorial guiado la primera vez que se entra al entrenamiento
+    if (b.training && !Save.d.tutorialDone) this.startTutorial();
+  }
+
+  startTutorial() {
+    const k = a => keyName(Input.codesFor(a)[0]);
+    const p = this.p;
+    const x0 = p.x;
+    this.tut = {
+      i: 0, used: new Set(),
+      steps: [
+        { t: `Muévete con ${k('left')} ${k('right')}`, ok: () => Math.abs(p.x - x0) > 120 },
+        { t: `Salta con ${k('up')} (y otra vez en el aire para doble salto)`, ok: () => p.state === 'air' },
+        { t: `Combo básico: ${k('light')}, ${k('light')}, ${k('light')} cerca del muñeco`, ok: () => this.tut.used.has('hook') },
+        { t: `Ataque fuerte: ${k('heavy')}  ·  Lanzador: ${k('down')} + ${k('heavy')}`, ok: () => this.tut.used.has('roundhouse') || this.tut.used.has('uppercut') },
+        { t: `Técnica especial: ${k('special')} (Six Seven)`, ok: () => this.tut.used.has(p.loadout.special) },
+        { t: `Mantén ${k('block')} para bloquear (púlsalo justo antes del golpe para PARRY)`, ok: () => p.state === 'block' },
+        { t: `Dash / esquiva: ${k('dash')} + dirección`, ok: () => p.state === 'dash' },
+        { t: `¡ULTIMATE! Pulsa ${k('ult')} con la energía llena`, ok: () => this.tut.used.has(p.loadout.ult) }
+      ]
+    };
+    this.tutBox = this.add.graphics().setDepth(40);
+    this.tutText = txt(this, 640, 150, '', 26, '#ffffff', { ox: 0.5, oy: 0.5 }).setDepth(41);
+    this.tutStep = txt(this, 640, 116, '', 16, '#7df9ff', { ox: 0.5, oy: 0.5, body: true }).setDepth(41);
+  }
+  tutorialTick() {
+    const T = this.tut;
+    if (!T) return;
+    const st = T.steps[T.i];
+    if (st && st.ok()) {
+      T.i++;
+      Audio.play('energyFull');
+      this.tutText.setScale(1.3); this.tweens.add({ targets: this.tutText, scale: 1, duration: 200 });
+    }
+    const g = this.tutBox; g.clear();
+    if (T.i >= T.steps.length) {
+      if (!T.done) {
+        T.done = true;
+        Save.d.tutorialDone = true; Save.d.ap += 100; Save.save();
+        this.tutText.setText('¡TUTORIAL COMPLETADO! +100 AP').setColor('#ffd166'); this.tutStep.setText('Ya estás listo para el Camino del Aura');
+        Audio.play('victory');
+        this.time.delayedCall(3500, () => { this.tutText.destroy(); this.tutStep.destroy(); g.destroy(); this.tut = null; });
+      }
+      if (g.active) { g.fillStyle(0x000000, 0.6); g.fillRoundedRect(340, 96, 600, 80, 12); }
+      return;
+    }
+    g.fillStyle(0x000000, 0.6); g.fillRoundedRect(340, 96, 600, 80, 12);
+    g.lineStyle(2, 0x7df9ff, 0.8); g.strokeRoundedRect(340, 96, 600, 80, 12);
+    g.fillStyle(0x7df9ff, 1); g.fillRect(350, 168, 580 * T.i / T.steps.length, 4);
+    this.tutStep.setText(`TUTORIAL ${T.i + 1}/${T.steps.length}`);
+    this.tutText.setText(T.steps[T.i].t);
   }
 
   makePortrait(f, x, y, facing) {
@@ -89,6 +140,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   onBev(e) {
+    if (e.type === 'move' && this.tut && e.f === this.p) this.tut.used.add(e.def.id);
     if (e.type === 'announce') {
       if (e.fight) { this.announce(e.text, '', '#7df9ff', 70); Audio.announce('¡Pelea!'); Audio.play('announce'); }
       else if (e.time) { this.announce(e.text, '', '#ffd166', 90); Audio.announce('¡Tiempo!'); }
@@ -114,8 +166,27 @@ export class HUDScene extends Phaser.Scene {
   ko(e) {
     const perfect = this.b.player.aura >= this.b.player.maxAura * 0.999 && e.attacker === this.b.player;
     const time = !!(this.b.lastKO && this.b.lastKO.time);
-    this.announce(time ? 'TIEMPO' : 'K.O.', perfect ? 'PERFECT AURA' : 'AURA DESTRUIDA', perfect ? '#ffd166' : '#ff4d6d', 120);
-    if (!time) Audio.announce(perfect ? 'K.O. Perfecto' : 'K.O.');
+    const ult = e.attacker && e.attacker.move && e.attacker.move.def.slot === 'ult';
+    const hum = e.attacker && e.attacker.move && e.attacker.move.def.taunt;
+    this.announce(time ? 'TIEMPO' : ult ? 'ULTIMATE K.O.' : 'K.O.', perfect ? 'PERFECT AURA' : hum ? 'HUMILLADO' : ult ? e.attacker.move.def.name.toUpperCase() : 'AURA DESTRUIDA', perfect ? '#ffd166' : ult ? '#c084fc' : '#ff4d6d', 120);
+    if (!time) { Audio.announce(perfect ? 'K.O. Perfecto' : 'K.O.'); this.speedLines(70, 0xffffff); }
+  }
+
+  speedLines(frames, color = 0xffffff) {
+    this.sl = { t: frames, max: frames, color };
+  }
+  drawSpeedLines() {
+    const S = this.sl; if (!S) return;
+    const g = this.gTop; g.clear();
+    if (S.t <= 0) { this.sl = null; return; }
+    S.t--;
+    const k = S.t / S.max;
+    for (let i = 0; i < 46; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r1 = 300 + Math.random() * 200, r2 = 900;
+      g.lineStyle(1 + Math.random() * 4, S.color, 0.5 * k);
+      g.lineBetween(640 + Math.cos(a) * r1, 360 + Math.sin(a) * r1 * 0.7, 640 + Math.cos(a) * r2, 360 + Math.sin(a) * r2 * 0.7);
+    }
   }
 
   letterbox(frames) {
@@ -126,6 +197,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   ultBanner(f, def) {
+    this.speedLines(45, hex(def.color || '#ffffff'));
     const c = this.add.container(0, 0).setDepth(58);
     const col = hex(def.color || '#ffffff');
     const left = f.team === this.p.team;
@@ -133,10 +205,11 @@ export class HUDScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.75); g.fillRect(-200, 250, 1680, 210);
     g.fillStyle(col, 0.9); g.fillRect(-200, 250, 1680, 8); g.fillRect(-200, 452, 1680, 8);
     for (let i = 0; i < 30; i++) { g.fillStyle(col, 0.15); g.fillRect(Math.random() * 1280, 262 + Math.random() * 180, 80 + Math.random() * 200, 3); }
-    const prev = new StickPreview(this, left ? 300 : 980, 600, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4 });
+    const prev = new StickPreview(this, left ? 300 : 980, 690, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4 });
     const m = this.make.graphics({ add: false }); m.fillStyle(0xffffff); m.fillRect(0, 258, 1280, 194);
     const mask = m.createGeometryMask(); prev.g.setMask(mask); prev.glow.setMask(mask);
-    const t1 = txt(this, left ? 560 : 720, 330, def.name.toUpperCase(), 72, def.color || '#ffffff', { ox: left ? 0 : 1, oy: 0.5, strokeThickness: 8 });
+    const nm = def.name.toUpperCase();
+    const t1 = txt(this, left ? 540 : 740, 330, nm, Math.min(72, Math.floor(700 / (nm.length * 0.5))), def.color || '#ffffff', { ox: left ? 0 : 1, oy: 0.5, strokeThickness: 8 });
     const t2 = txt(this, left ? 566 : 714, 400, 'ULTIMATE · ' + f.name, 24, '#ffffff', { ox: left ? 0 : 1, oy: 0.5 });
     c.add([g, t1, t2]);
     c.setAngle(left ? -4 : 4);
@@ -271,7 +344,7 @@ export class HUDScene extends Phaser.Scene {
       this.slotTexts[i].name.setAlpha(ok ? 1 : 0.45);
     });
     // entrenamiento
-    if (b.training) this.trainingInfo();
+    if (b.training) { this.trainingInfo(); this.tutorialTick(); }
     if (Save.d.settings.showFps) T.fps.setText(Math.round(this.game.loop.actualFps) + ' FPS'); else T.fps.setText('');
     if (this.ePortrait) {
       const one = es.length === 1;
@@ -282,6 +355,7 @@ export class HUDScene extends Phaser.Scene {
     // borde de peligro
     if (p.auraPct < 0.25 && p.alive) { g.lineStyle(14, 0xff0033, 0.12 + Math.sin(this.t * 0.15) * 0.08); g.strokeRect(0, 0, 1280, 720); }
     if (b.domain) { g.lineStyle(30, 0x8a2be2, 0.25); g.strokeRect(0, 0, 1280, 720); }
+    this.drawSpeedLines();
   }
 
   ghostOf(f) {

@@ -60,3 +60,24 @@ test('la IA de nivel alto gana a la de nivel bajo', () => {
   for (let s = 30; s < 40; s++) { const { b } = runBattle(s, 6, 0); if (b.winnerTeam === 0) hi++; }
   assert.ok(hi >= 8, 'Aura God ganó ' + hi + '/10 a NPC');
 });
+
+test('supervivencia: las oleadas aparecen y el combate termina', async () => {
+  const { BOTS } = await import('../src/data/bots.js');
+  const mk = (bot, lv) => ({ team: 1, profile: { name: bot.name, boss: bot.boss, scale: bot.scale }, loadout: bot.loadout, maxAura: bot.maxAura, controller: new AIController({ level: lv, style: bot.style, seed: 5 }) });
+  const b = new Battle({ fighters: [{ team: 0, profile: { name: 'P' }, controller: new AIController({ level: 6, style: 'balanced', seed: 1 }) }, mk(BOTS[0], 0)], timer: 0, seed: 9, endless: true });
+  let waves = 1, ended = false, pending = -1;
+  for (let i = 0; i < 60 * 60 * 4 && !ended; i++) {
+    b.step({});
+    // cada 6 s se fuerza el KO de la oleada actual (hasta la quinta) y luego cae el jugador
+    if (i % 360 === 359 && b.phase === 'fight') {
+      if (waves < 5) for (const e of b.alive(1)) b.dealDamage(b.player, e, 99999);
+      else b.dealDamage(null, b.player, 99999);
+    }
+    if (pending > 0 && --pending === 0) { waves++; for (let k = 0; k < Math.min(3, 1 + Math.floor(waves / 2)); k++) b.addFighter(mk(BOTS[(waves * 7 + k) % BOTS.length], 3), k); }
+    for (const e of b.drainEvents()) { if (e.type === 'waveClear') pending = 90; if (e.type === 'matchEnd') ended = true; }
+    for (const f of b.fighters) assert.ok(Number.isFinite(f.x) && Number.isFinite(f.y));
+  }
+  assert.equal(waves, 5, 'oleadas: ' + waves);
+  assert.ok(ended, 'la supervivencia debe terminar cuando cae el jugador');
+  assert.ok(!b.result.win);
+});

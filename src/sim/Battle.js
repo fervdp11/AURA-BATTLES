@@ -63,6 +63,8 @@ export class Battle {
       if (cfg.infiniteEnergy) f.infiniteEnergy = true;
       if (cfg.infiniteAura) f.infiniteAura = true;
       f.setState('intro');
+      if (f.boss) { f.y = GROUND_Y - 900; f.grounded = false; f.vy = 6; }
+      else f.x = x - f.facing * 150;
       this.fighters.push(f);
     }
     this.emit('roundStart', { round: this.round });
@@ -549,10 +551,11 @@ export class Battle {
 
   dealDamage(a, d, dmg, info = {}) {
     if (!d.alive) return;
+    const real = Math.max(0, Math.min(dmg, d.aura));
     if (d.infiniteAura && this.training) { d.aura = Math.max(1, d.aura - dmg); }
     else d.aura -= dmg;
-    d.stats.taken += dmg;
-    if (a) a.stats.dmg += dmg;
+    d.stats.taken += real;
+    if (a && a !== d) a.stats.dmg += real;
     if (d.isHuman && dmg > 0) this.matchStats.perfect = false;
     const st = d.hasStatus('stonks');
     if (st) { st.data.taken = (st.data.taken || 0) + dmg; if (st.data.taken > 150) { d.removeStatus('stonks'); this.emit('callout', { f: d, text: 'STONKS CRASH', color: '#ff4444' }); } }

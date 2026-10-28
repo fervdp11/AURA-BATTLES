@@ -18,6 +18,8 @@ import { HUDScene } from './scenes/HUDScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { ResultScene } from './scenes/ResultScene.js';
 import { MoveListScene } from './scenes/MoveListScene.js';
+import { Audio } from './core/Audio.js';
+import { Save } from './core/Save.js';
 
 const config = {
   type: Phaser.WEBGL,
@@ -37,4 +39,7 @@ const fonts = ['48px "Anton"', '20px "Rubik"', 'bold 20px "Rubik"'];
 Promise.race([
   Promise.all(fonts.map(f => document.fonts.load(f))),
   new Promise(r => setTimeout(r, 2500))
-]).finally(() => { window.game = new Phaser.Game(config); });
+]).finally(() => {
+  window.game = new Phaser.Game(config);
+  window.__AURA = { Audio, Save }; // acceso para depuración desde la consola
+});

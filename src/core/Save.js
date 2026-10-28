@@ -13,7 +13,7 @@ function defaults() {
     stats: { wins: 0, losses: 0, matches: 0, streak: 0, bestStreak: 0, byLevel: [0, 0, 0, 0, 0, 0, 0], lossByLevel: [0, 0, 0, 0, 0, 0, 0], perfects: 0, maxCombo: 0, parries: 0, humiliations: 0, damage: 0, ults: 0, bosses: 0, survivalBest: 0, survivalRuns: 0, wins1v3: 0, charms: 0, playFrames: 0, specials: 0, kos: 0 },
     path: { cleared: {} }, pathChapters: 0,
     achievements: {},
-    lastLevel: 2,
+    lastLevel: 1,
     settings: { music: 0.55, sfx: 0.8, voice: true, shake: 1, damageNumbers: true, showFps: false, hitboxes: false, bindings: null, quality: 'alta', announcer: true }
   };
 }
