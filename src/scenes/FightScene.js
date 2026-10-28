@@ -49,7 +49,7 @@ export class FightScene extends Phaser.Scene {
     this.scene.bringToTop('HUD');
     this.pop = Input.push((a, code) => {
       if (this.paused || this.ended) return;
-      if (Input.codesFor('pause').includes(code) || code === 'Escape') this.pause();
+      if (code === 'Escape' || (this.spec.mode !== 'versus' && Input.codesFor('pause').includes(code))) this.pause();
     });
     this.events.once('shutdown', () => {
       if (this.pop) this.pop();
@@ -84,7 +84,7 @@ export class FightScene extends Phaser.Scene {
     if (e.type === 'victory') {
       this.view.celebrate(e.team);
       Audio.music('results');
-      const win = e.team === b.player.team;
+      const win = this.spec.mode === 'versus' || e.team === b.player.team;
       Audio.play(win ? 'victory' : 'defeat');
     }
     if (e.type === 'matchEnd' && !this.ended) this.finish(e.result);
@@ -111,6 +111,17 @@ export class FightScene extends Phaser.Scene {
   finish(result) {
     this.ended = true;
     const spec = this.spec;
+    if (spec.mode === 'versus') {
+      // multijugador local: marcador de la sesión, sin progreso ni recompensas
+      const score = [...(spec.score || [0, 0])];
+      score[result.winnerTeam]++;
+      const [a, b2] = this.battle.fighters;
+      const vs = Save.d.versusStats || (Save.d.versusStats = { matches: 0, p1: 0, p2: 0 });
+      vs.matches++; vs[result.winnerTeam === 0 ? 'p1' : 'p2']++; Save.save();
+      const info = { winner: result.winnerTeam, rounds: result.rounds, frames: this.battle.frame, stats: [{ ...a.stats }, { ...b2.stats }], names: [a.name, b2.name], aura: [a.aura / a.maxAura, b2.aura / b2.maxAura] };
+      this.time.delayedCall(400, () => go(this, 'Result', { spec: { ...spec, score }, result, info, rewards: null }));
+      return;
+    }
     const p = this.battle.player;
     const info = {
       mode: spec.mode, win: result.win, level: spec.levelOverride ?? Math.max(...spec.enemies.map(e => e.level)),
@@ -131,8 +142,11 @@ export class FightScene extends Phaser.Scene {
     this.acc += Math.min(delta, 100) * ts;
     let n = 0;
     while (this.acc >= 16.667 && n < 5) {
-      const inp = Input.readGame();
-      b.step({ [b.player.id]: inp });
+      // cada humano lee su propio perfil de teclas en el mismo paso: pulsaciones simultáneas sin conflictos
+      const inputs = {};
+      for (const f of b.fighters) if (f.isHuman && !f.controller) inputs[f.id] = Input.readGame(f.ctrlProfile);
+      Input.clearPressed();
+      b.step(inputs);
       if (b.slowmo > 0) b.slowmo--;
       this.acc -= 16.667; n++;
       if (this.spec.mode === 'training') this.trainingTick();

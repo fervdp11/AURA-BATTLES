@@ -247,7 +247,8 @@ export class Battle {
       this.emit('victory', { team: winner, result: this.result });
     } else {
       this.phase = 'roundEnd'; this.phaseT = 0;
-      this.emit('announce', { text: winner === this.player.team ? 'RONDA GANADA' : 'RONDA PERDIDA' });
+      if (this.opts.versus) { const w = this.fighters.find(f => f.team === winner); this.emit('announce', { text: `RONDA PARA J${winner + 1}`, sub2: w ? w.name : '' }); }
+      else this.emit('announce', { text: winner === this.player.team ? 'RONDA GANADA' : 'RONDA PERDIDA' });
     }
   }
 

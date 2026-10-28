@@ -3,8 +3,9 @@ import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { drawBody, hex } from '../view/StickRenderer.js';
 import { makePose, copyPose, computeJoints } from '../sim/skeleton.js';
-import { POSES, MODS, evalKeyframes } from '../sim/poses.js';
-import { CELEBRATIONS } from '../sim/celebrations.js';
+import { POSES, MODS } from '../sim/poses.js';
+import { CELEBRATIONS, DEFEATS } from '../sim/celebrations.js';
+import { playCelebration } from '../sim/Fighter.js';
 
 export const FONT = '"Anton", Impact, "Arial Black", sans-serif';
 export const BODY_FONT = '"Rubik", "Segoe UI", Roboto, Arial, sans-serif';
@@ -193,10 +194,9 @@ export class StickPreview {
   update() {
     this.f++;
     const a = this.anim;
-    if (CELEBRATIONS[a]) {
-      const c = CELEBRATIONS[a];
-      evalKeyframes(c.anim, this.f, this.pose);
-      for (const m of c.mods || []) if (this.f >= m[0] && this.f < m[1] && MODS[m[2]]) MODS[m[2]](this.pose, this.f - m[0]);
+    if (CELEBRATIONS[a] || DEFEATS[a]) {
+      const c = CELEBRATIONS[a] || DEFEATS[a];
+      playCelebration(c, this.f, this.pose);
     } else if (POSES[a]) { copyPose(POSES[a], this.pose); MODS.breathe(this.pose, this.f); }
     else { copyPose(POSES.guard, this.pose); MODS.breathe(this.pose, this.f); }
     computeJoints(this.pose, this.x, this.y, this.facing, this.scale, true, this.j);

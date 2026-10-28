@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Save } from '../core/Save.js';
-import { Input, DEFAULT_BINDINGS, ACTION_LABELS, keyName } from '../core/Input.js';
+import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, go, fadeIn, keyHints, toast } from '../ui/UI.js';
 
@@ -38,39 +38,15 @@ export class SettingsScene extends Phaser.Scene {
       { label: 'MOSTRAR HITBOXES', value: () => yn(st.hitboxes), onLeft: () => tog('hitboxes'), onRight: () => tog('hitboxes'), help: 'Muestra cajas de golpe (rojo) y de daño (verde).' },
       { label: 'MOSTRAR FPS', value: () => yn(st.showFps), onLeft: () => tog('showFps'), onRight: () => tog('showFps') },
       { label: 'PANTALLA COMPLETA', onSelect: () => { if (this.scale.isFullscreen) this.scale.stopFullscreen(); else this.scale.startFullscreen(); } },
-      { label: 'CONTROLES', onSelect: () => this.controls(), help: 'Cambia la tecla de cada acción.' },
+      { label: 'CONTROLES', onSelect: () => this.controls(), help: 'Teclas de 1 jugador y de Jugador 1 / Jugador 2 (multijugador local). Detecta conflictos y permite restablecer.' },
       { label: 'BORRAR PROGRESO', color: '#ff4d6d', onSelect: () => this.wipe(), help: 'Elimina todo el progreso guardado en este navegador.' },
       { label: 'VOLVER', onSelect: () => go(this, 'Menu') }
     ], () => go(this, 'Menu'));
   }
-  controls() {
-    const st = Save.d.settings;
-    const actions = Object.keys(DEFAULT_BINDINGS);
-    const items = actions.map(a => ({
-      label: ACTION_LABELS[a], value: () => Input.codesFor(a).map(keyName).join(' / '), help: 'ENTER y pulsa la nueva tecla. ESC cancela.',
-      onSelect: () => {
-        this.menu.active = false;
-        this.help.setText(`Pulsa una tecla para "${ACTION_LABELS[a]}"…`);
-        Input.captureNext(code => {
-          if (code !== 'Escape') {
-            const b = JSON.parse(JSON.stringify(Input.bindings));
-            for (const k in b) b[k] = b[k].filter(c => c !== code);
-            b[a] = [code];
-            Input.setBindings(b);
-            st.bindings = Input.bindings; Save.save();
-            Audio.play('ui_select');
-          }
-          this.time.delayedCall(50, () => { this.menu.active = true; this.help.setText('Tecla asignada.'); });
-        });
-      }
-    }));
-    items.push({ label: 'RESTABLECER CONTROLES', onSelect: () => { Input.setBindings(DEFAULT_BINDINGS); st.bindings = null; Save.save(); toast(this, 'Controles restablecidos', '#7df9ff'); } });
-    items.push({ label: 'VOLVER', onSelect: () => this.main() });
-    this.setMenu(items, () => this.main());
-  }
+  controls() { go(this, 'Controls', { prof: 'solo', back: { scene: 'Settings' } }); }
   wipe() {
     if (!this.confirmWipe) { this.confirmWipe = true; toast(this, 'Pulsa otra vez para BORRAR TODO', '#ff4d6d'); this.time.delayedCall(3000, () => { this.confirmWipe = false; }); return; }
-    Save.reset(); Input.setBindings(DEFAULT_BINDINGS);
+    Save.reset(); for (const p of ['solo', 'p1', 'p2']) Input.resetProfile(p);
     toast(this, 'Progreso borrado', '#ff4d6d');
     this.confirmWipe = false;
     this.main();

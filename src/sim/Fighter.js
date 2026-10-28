@@ -26,6 +26,7 @@ export class Fighter {
     this.aura = this.maxAura;
     this.energy = cfg.energy ?? 0;
     this.isHuman = !!cfg.human;
+    this.ctrlProfile = cfg.ctrlProfile || 'solo'; // perfil de teclas (1 jugador, J1 o J2)
     this.controller = cfg.controller || null;
     this.x = cfg.x ?? 600; this.y = GROUND_Y; this.vx = 0; this.vy = 0;
     this.facing = cfg.facing ?? 1;

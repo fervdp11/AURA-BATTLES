@@ -14,7 +14,7 @@ export class BootScene extends Phaser.Scene {
   create() {
     makeTextures(this);
     const d = this.d = Save.load();
-    Input.init(d.settings.bindings);
+    Input.init(d.settings);
     Audio.setVolumes(d.settings.music, d.settings.sfx);
     this._started = false; this._intro = false; this._done = false;
     this.t = 0; this.it = 0;
