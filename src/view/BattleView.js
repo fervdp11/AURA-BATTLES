@@ -8,6 +8,7 @@ import { MOVES } from '../sim/moves.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.js';
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
+import { drawShark, drawCrocPlane, drawTungTung, drawBallerina, drawRoots, drawLirili } from './Brainrot.js';
 
 const STRENGTH_SFX = { light: 'hitLight', medium: 'hitMed', heavy: 'hitHeavy', mega: 'hitMega' };
 // firma sonora (sin voces) de cada técnica al lanzarla
@@ -19,6 +20,9 @@ const MOVE_SFX = {
   perfectlyBalanced: ['fingerSnap'], letHimCook: ['fire'], caughtIn4K: ['shutter'], rickroll: ['tauntHorn'], ggEz: ['tauntHorn'], lBozo: ['tauntHorn'],
   broReallyThought: ['tauntHorn'], skillIssue: ['tauntHorn'], micDrop: ['swish'], dealWithIt: ['swish'], mainCharacter: ['sparkle'], ohioMode: ['glitch'],
   lagSpike: ['glitch'], afk: ['heartbeat'], thisIsFine: ['fire'], stonks: ['coin'], bigBrain: ['energyFull'], narutoRun: ['dash'], speedrun: ['dash'],
+  snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
+  sigmaTurn: ['sigmaHum'], rizzLean: ['rizzChime'], menacingPose: ['sigmaHum'], tralalero: ['bubbles'], brrPatapim: ['woodKnock'], liriliLarila: ['tick'],
+  ballerinaCappuccina: ['musicBox', 'pirouette'], shoulderBrush: ['swish'], defaultDance: ['scratch'], headPalm: ['swish'], brainrotInvasion: ['ultCast', 'bubbles'], mainCharacterEnding: ['sigmaHum'],
   domainExpansion: ['domain'], finalAuraJudgment: ['ultCast'], ultimateNonchalance: ['sigmaHum'], coffinDance: ['tauntHorn'], auraOverload: ['ultCast']
 };
 const SHAKE = { light: [0, 0], medium: [70, 0.0025], heavy: [130, 0.005], mega: [240, 0.01] };
@@ -341,6 +345,8 @@ export class BattleView {
         case 'notes': ga.lineStyle(5, 0xff66ff, 0.5); ga.strokeEllipse(x, y, p.w, 160); if (Math.random() < 0.6) this.fx.emit('note', x + (Math.random() - 0.5) * p.w, y - 40, 1, 0xff66ff); break;
         case 'icecream': g.fillStyle(0xd4a373, 1); g.fillTriangle(x - 9, y - 4, x + 9, y - 4, x, y + 18); g.fillStyle(0xffd6e0, 1); g.fillCircle(x, y - 9, 10); g.fillStyle(0xaee8ff, 1); g.fillCircle(x + 4, y - 15, 6); break;
         case 'banana': g.lineStyle(9, 0x7a5c00, 1); g.beginPath(); g.arc(x, y - 8, 16, 0.3, 2.8); g.strokePath(); g.lineStyle(6, 0xffe135, 1); g.beginPath(); g.arc(x, y - 8, 16, 0.3, 2.8); g.strokePath(); break;
+        case 'shark': drawShark(g, x, y, d, p.owner.scale * (p.scale || 1), t + p.id); if (Math.random() < 0.4) this.fx.dust(x - d * 40, GROUND_Y, 1, 0x9fd3ff, -d, 0.6); break;
+        case 'roots': drawRoots(g, x, GROUND_Y + 2, p.owner.scale, Math.min(1, p.age / 4), t); break;
         case 'bomb': g.fillStyle(0x222222, 1); g.fillCircle(x, y, 14); g.fillStyle(0x6b8e23, 1); g.fillRect(x - 4, y - 22, 8, 8); ga.fillStyle(0xffaa00, 0.8); ga.fillCircle(x, y - 24 + Math.sin(t) * 2, 4); break;
         case 'glasses': g.fillStyle(0x000000, 1); for (let i = 0; i < 6; i++) g.fillRect(x - 30 + i * 10, y - 6, 9, 9); g.fillRect(x - 30, y - 9, 60, 4); g.fillStyle(0xffffff, 1); g.fillRect(x - 26, y - 4, 4, 4); g.fillRect(x + 6, y - 4, 4, 4); break;
         case 'grass': for (let i = -6; i <= 6; i++) { g.fillStyle(i % 2 ? 0x2f9e44 : 0x51cf66, 1); g.fillTriangle(x + i * 10 - 6, GROUND_Y, x + i * 10 + 6, GROUND_Y, x + i * 10, GROUND_Y - 30 - Math.abs(Math.sin(i * 1.7)) * 40); } break;
@@ -361,6 +367,7 @@ export class BattleView {
     const k = Math.sin(this.t * 0.5) * 0.5 + 0.5;
     if (p.kind === 'pillar') { ga.fillStyle(0xfff6a0, 0.08 + k * 0.08); ga.fillRect(p.x - p.w / 2, -1200, p.w, 1800 + 600); ga.lineStyle(3, 0xfff6a0, 0.6); ga.strokeEllipse(p.x, GROUND_Y, p.w * 1.4, 26); }
     else if (p.kind === 'grass') { g.fillStyle(0x2f9e44, 0.6); for (let i = -4; i <= 4; i++) g.fillTriangle(p.x + i * 12 - 4, GROUND_Y, p.x + i * 12 + 4, GROUND_Y, p.x + i * 12, GROUND_Y - 6 - k * 6); }
+    else if (p.kind === 'roots') { g.fillStyle(0x3a2410, 0.5); g.fillEllipse(p.x, GROUND_Y + 2, 120, 18); g.lineStyle(2, 0x6b8e23, 0.5 + k * 0.5); g.strokeEllipse(p.x, GROUND_Y + 2, 130, 22); drawRoots(g, p.x, GROUND_Y + 2, p.owner.scale, 0.12 + k * 0.08, this.t); }
     else if (p.kind === 'glasses' || p.kind === 'bighand' || p.kind === 'lightning' || p.kind === 'none') { g.fillStyle(0x000000, 0.4); g.fillEllipse(p.x, GROUND_Y, 100, 18); g.lineStyle(2, look.aura, 0.5 + k * 0.5); g.strokeEllipse(p.x, GROUND_Y, 110, 22); }
     else { g.lineStyle(2, look.aura, 0.4 + k * 0.4); g.strokeEllipse(p.x, GROUND_Y, 100, 18); }
   }
@@ -616,6 +623,12 @@ export class BattleView {
     switch (e.fx) {
       case 'slap': fx.text(e.x, e.y - 30, '¡ZAS!', { color: '#ffffff', size: 48 }); this.sfx('slap'); this.shake('heavy'); fx.emit('star', e.x, e.y, 10, 0xffffff); break;
       case 'bonk': fx.text(e.x, e.y - 50, 'BONK', { color: '#d6a46b', size: 40 }); this.sfx('bonk'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 8, 0xffe066); break;
+      case 'flick': fx.text(e.x, e.y - 60, 'TOC', { color: '#8be9fd', size: 34 }); this.sfx('fingerSnap'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
+      case 'headbutt': fx.text(e.x, e.y - 60, '¡CRACK!', { color: '#c084fc', size: 44 }); this.sfx('woodKnock', { pitch: 0.6 }); this.shake('heavy'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 12, 0xffffff); break;
+      case 'chomp': fx.text(e.x, e.y - 60, 'ÑAM', { color: '#4cc9f0', size: 44 }); this.sfx('chomp'); this.sfx('bubbles'); this.shake('heavy'); break;
+      case 'coffee': fx.emit('smoke', e.x, e.y - 20, 8, 0xf5deb3); this.sfx('pirouette'); break;
+      case 'boom': fx.flash(e.x, e.y, 0xff7b00, 2.2); fx.emit('smoke', e.x, e.y, 10, 0x444444); fx.sparks(e.x, e.y, 18, 0xffaa00, 11); this.sfx('explosion'); this.shake('heavy'); break;
+      case 'tung': fx.text(e.x, e.y - 60, 'TUNG', { color: '#c68642', size: 40, angle: (Math.random() - 0.5) * 20 }); this.sfx('woodKnock'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
       case 'pan': fx.text(e.x, e.y - 50, 'CLANG', { color: '#cccccc', size: 40 }); this.sfx('bonk', { pitch: 0.6 }); break;
       case 'vineBoom': this.sfx('vineBoom'); this.scene.events.emit('flash', 0xffffff, 120); this.shake('mega'); break;
       case 'fireFist': fx.emit('glow', e.x, e.y, 30, 0xff7b00); fx.ring(e.x, e.y, 0xff7b00, 2.5); this.sfx('explosion'); fx.text(e.x, e.y - 60, 'FALCON PUNCH!', { color: '#ff7b00', size: 46 }); break;
@@ -635,6 +648,33 @@ export class BattleView {
     const look = f ? this.lookFor(f) : null;
     switch (e.name) {
       case 'sixseven': fx.motes(e.alt ? f.joints.fHandX : f.joints.nHandX, e.alt ? f.joints.fHandY : f.joints.nHandY, 0xffd166, 2, 10); break;
+      case 'snapBeat': {
+        const hx = e.i % 2 ? f.joints.nHandX : f.joints.fHandX, hy = e.i % 2 ? f.joints.nHandY : f.joints.fHandY;
+        fx.ring(hx, hy, 0xb388ff, 0.9 + e.i * 0.08, 260); fx.motes(f.x, f.y - 60, look.aura, 4, 50);
+        fx.text(hx, hy - 30, '✦', { color: '#d9c2ff', size: 24, hold: 120, rise: 30 });
+        this.sfxAt('fingerSnap', f.x, { pitch: 1 + (e.i % 4) * 0.06 }); break;
+      }
+      case 'sixsevenSlam':
+        fx.groundWave(f.x, GROUND_Y - 4, 0xffd166, 520); fx.dust(f.x, GROUND_Y, 16); this.shake('heavy'); this.sfx('stomp');
+        fx.text(f.x - 60, f.y - 160, '6', { color: '#ffd166', size: 64 }); fx.text(f.x + 60, f.y - 160, '7', { color: '#ffd166', size: 64 }); break;
+      case 'rizzWink': fx.emit('heart', f.joints.headX + f.facing * 20, f.joints.headY, 8, 0xff5fa2); fx.text(f.joints.headX + f.facing * 30, f.joints.headY - 40, '😉', { size: 34, hold: 300 }); this.sfx('kissPop'); break;
+      case 'menace': for (let i = 0; i < 2; i++) fx.text(f.x + (Math.random() - 0.5) * 220, f.y - 120 - Math.random() * 140, 'ゴ', { color: '#9b5de5', size: 30 + Math.random() * 26, hold: 260, rise: 40, angle: (Math.random() - 0.5) * 30 }); if (Math.random() < 0.5) this.sfx('heartbeat', { gain: 0.5 }); break;
+      case 'tralalero': fx.emit('glow', f.x + f.facing * 50, GROUND_Y - 40, 14, 0x4cc9f0); fx.text(f.x, f.y - 210, 'TRALALERO TRALALA', { color: '#4cc9f0', size: e.big ? 40 : 30 }); this.sfx('bubbles'); break;
+      case 'patapim': fx.text(f.x, f.y - 210, 'BRR BRR PATAPIM', { color: '#a7c957', size: 30 }); fx.dust(f.x, GROUND_Y, 8, 0x6b4423); this.sfx('woodKnock', { pitch: 0.5 }); break;
+      case 'lirili':
+        fx.ring(f.x, f.y - 90, 0xa7c957, 5, 600); this.sfx('tick'); this.sfx('rewind');
+        fx.custom(70, (gt, gn, k, el) => drawLirili(gn, f.x - f.facing * 90, GROUND_Y, f.scale * 0.9, el));
+        fx.text(f.x, f.y - 230, 'LIRILÌ LARILÀ', { color: '#a7c957', size: 30 }); break;
+      case 'brushOff': fx.dust(f.joints.shX, f.joints.shY, 6, 0xdddddd, -f.facing, 0.5); fx.emit('star', f.joints.shX, f.joints.shY, 4, 0xffffff); break;
+      case 'notes': fx.emit('note', f.x, f.y - 160, 2, [0x50fa7b, 0xff66ff, 0xffd166][Math.floor(Math.random() * 3)]); break;
+      case 'whiff': fx.text(f.joints.nHandX, f.joints.nHandY - 20, 'FIU', { color: '#cccccc', size: 20, hold: 120, rise: 20 }); this.sfx('whoosh', { pitch: 1.3, gain: 0.6 }); break;
+      case 'credits': {
+        const a = f;
+        fx.custom(110, (gt, gn, k, el) => { gt.fillStyle(0xfff2a8, 0.12 * Math.min(1, el / 10)); gt.fillTriangle(a.x, -600, a.x - 120, GROUND_Y, a.x + 120, GROUND_Y); });
+        fx.text(a.x, a.y - 240, '★ PROTAGONISTA ★', { color: '#ffe066', size: 36, hold: 1400 });
+        break;
+      }
+      case 'brainrot': this.brainrotStep(e); break;
       case 'jawline': fx.custom(40, (gt, gn, k) => { gt.lineStyle(4, 0x9be7ff, k); const j = f.joints, d = f.facing; gt.lineBetween(j.headX - d * 8, j.headY + 8, j.headX + d * 5, j.headY + 15); gt.lineBetween(j.headX + d * 5, j.headY + 15, j.headX + d * 13, j.headY + 9); }); fx.emit('star', f.joints.headX + f.facing * 6, f.joints.headY + 12, e.big ? 10 : 5, 0x9be7ff); this.sfx('ice'); break;
       case 'stare': {
         const j = f.joints;
@@ -699,6 +739,21 @@ export class BattleView {
       case 'clap': fx.ring(f.joints.nHandX, f.joints.nHandY, 0xffd166, 2); this.sfx('slap', { pitch: 1.3 }); break;
       case 'stopSign': fx.text(f.x + f.facing * 60, f.y - 140, '✋', { size: 40, hold: 200 }); this.sfx('block', { pitch: 0.8 }); break;
       case 'zzz': fx.text(f.joints.headX + 20, f.joints.headY - 20, 'Z', { size: 22, color: '#8888ff', hold: 300 }); break;
+    }
+  }
+
+  // secuencia cinemática de la Invasión Brainrot
+  brainrotStep(e) {
+    const fx = this.fx, v = e.f, a = e.a, d = Math.sign(v.x - a.x) || 1;
+    switch (e.step) {
+      case 'shark': fx.custom(40, (gt, gn, k, el) => { const p = Math.min(1, el / 8); drawShark(gn, a.x + (v.x - a.x) * p, GROUND_Y - 60 - Math.sin(p * Math.PI) * 60, d, 1.4, el * 2); }); break;
+      case 'plane':
+        this.sfx('planeEngine', { dur: 1.2 });
+        fx.custom(44, (gt, gn, k, el) => { const x = v.x - d * 700 + d * el * 32; drawCrocPlane(gn, x, v.y - 420, d, 1.3, el); });
+        for (const dt of [12, 20, 28]) this.scene.time.delayedCall(dt * 16, () => { this.sfx('bombWhistle'); fx.custom(10, (gt, gn, k2, el2) => { gn.fillStyle(0x222222, 1); gn.fillCircle(v.x + (Math.random() - 0.5) * 6, v.y - 380 + el2 * 32, 10); }); });
+        break;
+      case 'tung': fx.custom(36, (gt, gn, k, el) => drawTungTung(gn, v.x + d * 90, GROUND_Y, 1.3, el * 1.4, -d)); fx.text(v.x, v.y - 260, 'TUNG TUNG TUNG SAHUR', { color: '#c68642', size: 36 }); break;
+      case 'ballerina': this.sfx('musicBox'); fx.custom(30, (gt, gn, k, el) => drawBallerina(gn, v.x - d * 300 + d * el * 12, GROUND_Y, 1.4, el * 2)); fx.text(v.x, v.y - 260, 'BALLERINA CAPPUCCINA', { color: '#ffb6c1', size: 34 }); break;
     }
   }
 

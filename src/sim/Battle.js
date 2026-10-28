@@ -706,6 +706,12 @@ export class Battle {
     this.hitstop = Math.max(this.hitstop, h.hitstop ?? 3);
     this.emit('hit', { a, f: d, x: d.x, y: d.y - 100 * d.scale, dmg, strength: h.spark || (dmg > 60 ? 'heavy' : 'light'), combo: a.combo.hits, move: move.def.id, color: h.color, fx: h.fx, lock: true });
     if (h.say) this.emit('callout', { f: a, text: h.say, color: h.sayColor || '#ffffff' });
+    if (h.drain && !d.isImmune('humiliate')) {
+      this.dealDamage(a, d, h.drain * a.dmgMult() * d.defMult(), { drain: true, noKO: true });
+      a.stats.humiliations++;
+      this.emit('humiliate', { a, f: d, text: h.say || 'HUMILLADO', color: h.sayColor || '#ff66cc', amount: h.drain });
+      if (d.aura <= 0) { d.aura = 1; if (move.lock) move.lock.lethal = true; }
+    }
   }
 
   releaseLock(a, L, broken) {

@@ -50,13 +50,16 @@ class G extends Phaser.Scene {
       const j = computeJoints(p, wx, wy, facing, scl, true, {});
       drawBody(g, gl, j, p, scl, lookA, 1, { glow: +(Q.get('glow') ?? 0.6), time: 30 });
     } else if (it.move) {
-      const b = new Battle({ fighters: [{ team: 0, profile: { name: 'A', scale: scl }, controller: { getInput: () => emptyInput() } }, { team: 1, profile: { name: 'B' }, controller: { getInput: () => emptyInput() } }], seed: 2, timer: 0 });
+      // batk=N: el rival pulsa ataque rápido N fotogramas después de empezar (para probar contras)
+      const batk = Q.get('batk') ? +Q.get('batk') : -1; let bt = -999;
+      const bctrl = { getInput: () => { const i = emptyInput(); if (++bt === batk) { i.pressed.light = true; i.held.light = true; } return i; } };
+      const b = new Battle({ fighters: [{ team: 0, profile: { name: 'A', scale: scl }, controller: { getInput: () => emptyInput() } }, { team: 1, profile: { name: 'B' }, controller: bctrl }], seed: 2, timer: 0 });
       while (b.phase !== 'fight') b.step({});
       const [A, B] = b.fighters;
       A.x = wx - facing * dist / 2; B.x = wx + facing * dist / 2; A.facing = facing; B.facing = -facing;
       A.energy = 100; A.aura = 300;
       for (let s = 0; s < 3; s++) b.step({});
-      A.startMove(it.move, { free: true });
+      A.startMove(it.move, { free: true }); bt = 0;
       const target = it.fr ?? (MOVES[it.move].startup + 1);
       for (let s = 0; s < target; s++) { b.step({}); b.hitstop = 0; b.freeze = null; }
       for (const f of b.fighters) drawFighter(g, gl, f, f === A ? lookA : lookB, { glow: 0.5, time: 30 });

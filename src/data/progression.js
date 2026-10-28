@@ -47,11 +47,11 @@ const TIER_OF = {
   1: [150, 0], 2: [300, 1], 3: [550, 2], 4: [850, 3], 5: [1300, 4], 6: [2000, 5]
 };
 const MOVE_TIERS = {
-  1: ['sigmaStare', 'noReaction', 'fakeHighFive', 'disrespectfulDodge', 'ratio', 'aimbot', 'emotionalDamage', 'dabOn', 'backflipDiss', 'skillIssue', 'ggEz', 'hitTheWoah', 'bananaSlip'],
-  2: ['auraWalk', 'unoReverse', 'npcMode', 'noLook360', 'phantomDap', 'auraTheft', 'skibidiSpin', 'flossShield', 'sheesh', 'fanumTax', 'bruh', 'vineBoom', 'tungTung', 'clapBack', 'shush', 'goblinMode'],
-  3: ['nahIdWin', 'reverseAura', 'sigmaTeleport', 'crowdControl', 'touchGrass', 'caughtIn4K', 'gigachadJaw', 'mog', 'micDrop', 'dealWithIt', 'ballerinaSpin', 'holdUp', 'afk', 'auraFarming', 'rizzStorm', 'emoteCancel'],
-  4: ['dramaticEntrance', 'mainCharacter', 'delulu', 'bombasticSideEye', 'letHimCook', 'cooked', 'susVent', 'thisIsFine', 'stonks', 'narutoRun', 'bingChilling', 'ankleBreaker', 'speedrun', 'lagSpike', 'ohioMode', 'ultimateNonchalance', 'sigmaRule'],
-  5: ['infiniteMewing', 'bigBrain', 'oraBarrage', 'omaeWaMou', 'falconPunch', 'rickroll', 'rageQuit', 'bombardiro', 'spidermanPoint', 'perfectlyBalanced', 'coffinDance', 'timeStop'],
+  1: ['snapWalk', 'fakeGreeting', 'doubleSlap', 'shoulderBrush', 'defaultDance', 'sigmaStare', 'noReaction', 'fakeHighFive', 'disrespectfulDodge', 'ratio', 'aimbot', 'emotionalDamage', 'dabOn', 'backflipDiss', 'skillIssue', 'ggEz', 'hitTheWoah', 'bananaSlip'],
+  2: ['sixSevenSlam', 'handshakeHeadbutt', 'mewingGlare', 'rizzLean', 'tralalero', 'headPalm', 'auraWalk', 'unoReverse', 'npcMode', 'noLook360', 'phantomDap', 'auraTheft', 'skibidiSpin', 'flossShield', 'sheesh', 'fanumTax', 'bruh', 'vineBoom', 'tungTung', 'clapBack', 'shush', 'goblinMode'],
+  3: ['sigmaTurn', 'menacingPose', 'brrPatapim', 'liriliLarila', 'ballerinaCappuccina', 'nahIdWin', 'reverseAura', 'sigmaTeleport', 'crowdControl', 'touchGrass', 'caughtIn4K', 'gigachadJaw', 'mog', 'micDrop', 'dealWithIt', 'ballerinaSpin', 'holdUp', 'afk', 'auraFarming', 'rizzStorm', 'emoteCancel'],
+  4: ['brainrotInvasion', 'dramaticEntrance', 'mainCharacter', 'delulu', 'bombasticSideEye', 'letHimCook', 'cooked', 'susVent', 'thisIsFine', 'stonks', 'narutoRun', 'bingChilling', 'ankleBreaker', 'speedrun', 'lagSpike', 'ohioMode', 'ultimateNonchalance', 'sigmaRule'],
+  5: ['mainCharacterEnding', 'infiniteMewing', 'bigBrain', 'oraBarrage', 'omaeWaMou', 'falconPunch', 'rickroll', 'rageQuit', 'bombardiro', 'spidermanPoint', 'perfectlyBalanced', 'coffinDance', 'timeStop'],
   6: ['finalAuraJudgment', 'domainExpansion', 'auraOverload']
 };
 export const MOVE_SHOP = {};

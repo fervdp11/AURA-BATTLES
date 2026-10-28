@@ -39,7 +39,9 @@ export const STATUS = {
   dancing: { control: 'dance', color: 0xff66ff, label: 'RICKROLLED' },
   lagged: { control: 'freeze', color: 0x00ff66, label: 'LAG' },
   marked: { color: 0xff2222, label: 'OMAE WA MOU...' },
-  slowed: { speed: 0.7, color: 0x6688aa, label: 'LENTO' },
+  patapim: { rooted: true, color: 0x6b8e23, label: 'RAÍCES PATAPIM' },
+  lirili: { speed: 0.55, energyMult: 0.6, color: 0x88aa44, label: 'LIRILÌ LARILÀ' },
+    slowed: { speed: 0.7, color: 0x6688aa, label: 'LENTO' },
   burning: { color: 0xff5500 }
 };
 

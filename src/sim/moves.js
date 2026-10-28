@@ -1085,9 +1085,9 @@ def('auraFarming', {
 });
 
 def('tungTung', {
-  name: 'Tung Tung Sahur', cost: 20, cd: 120, startup: 12, active: 30, recovery: 16, color: '#c68642',
+  name: 'Tung Tung Tung Sahur', cost: 20, cd: 120, startup: 12, active: 30, recovery: 16, color: '#c68642',
   anim: [[0, 'bonkW'], [12, 'bonk', 'snap'], [18, 'bonkW'], [24, 'bonk', 'snap'], [30, 'bonkW'], [36, 'bonk', 'snap'], [42, 'bonk'], [58, 'guard']],
-  hit: H(32, { stun: 20, kb: [2.5, 0], height: 'high', every: 12, box: frontBox(20, -190, 85, 150), spark: 'medium', fx: 'bonk' }),
+  hit: H(32, { stun: 20, kb: [2.5, 0], height: 'high', every: 12, box: frontBox(20, -190, 85, 150), spark: 'medium', fx: 'tung', react: 'flattened' }),
   desc: 'Tres batazos por arriba al ritmo de "tung tung tung". Bloquéalos de pie.', tip: 'No te agaches.',
   ai: { role: 'overhead', range: [0, 125] }
 });
@@ -1409,6 +1409,340 @@ def('auraOverload', {
 // =====================================================================
 // metadatos derivados
 // =====================================================================
+
+// =====================================================================
+// NUEVAS TÉCNICAS DE AURA Y BRAINROT
+// =====================================================================
+
+def('snapWalk', {
+  name: 'Paseo de Chasquidos', cost: 10, cd: 240, startup: 6, active: 75, recovery: 10, fragile: true, color: '#b388ff',
+  motion: [[6, 81, 2.4]],
+  anim: [[0, 'guard'], [6, 'snapWalk'], [81, 'snapWalk'], [91, 'guard']], mods: [[6, 81, 'snapBeat']],
+  on: {
+    frame(f, b, m, t) {
+      if (t < 6 || t > 80 || m.data.interrupted || (t - 6) % 15 !== 0) return;
+      // cada chasquido, al ritmo, genera aura y energía; si el rival está cerca, le saca de quicio
+      m.data.snaps = (m.data.snaps || 0) + 1;
+      f.heal(16 + m.data.snaps * 4); f.gainEnergy(5);
+      fx(b, 'snapBeat', { f, i: m.data.snaps });
+      for (const d of b.enemiesInRange(f, 180, true, 160)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.isImmune('humiliate')) continue;
+        if (b.drain(f, d, 10, 'CHASQUIDO', '#b388ff')) { d.addStatus('tilted', 45, {}, f); m.hit = true; }
+      }
+    }
+  },
+  desc: 'Caminas con actitud chasqueando los dedos al ritmo: cada chasquido te da aura y energía; de cerca, tiltea y humilla al rival.', tip: 'Es frágil: cualquier golpe corta el paseo.',
+  ai: { role: 'buff', range: [200, 2000] }
+});
+
+def('sixSevenSlam', {
+  name: 'Six Seven Slam', cost: 20, cd: 120, startup: 16, active: 4, recovery: 20, color: '#ffd166',
+  anim: [[0, 'palmsUp'], [8, 'armsUp', 'out'], [16, 'palmSlam', 'snap'], [26, 'palmSlam'], [40, 'guard']], mods: [[0, 8, 'sixseven']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'sixsevenSlam', { f });
+      for (const dir of [1, -1]) {
+        b.spawnProjectile(f, { kind: 'shockwave', x: f.x + dir * 50 * f.scale, y: GROUND_Y - 22, absVx: true, vx: dir * 11, w: 90, h: 44, life: 28, pierce: true, clash: false,
+          hit: H(55, { stun: 22, height: 'low', kb: [5, -6], knockdown: true, react: 'hurtLow' }), src: 'sixSevenSlam', staleK: m.staleK });
+      }
+    }
+  },
+  desc: 'Seis, siete... ¡y palmada al suelo! Dos ondas bajas recorren el suelo hacia ambos lados y derriban.', tip: 'Salta las ondas o bloquea agachado.',
+  ai: { role: 'low', range: [0, 420] }
+});
+
+def('fakeGreeting', {
+  name: 'Saludo Falso', cost: 10, cd: 90, startup: 18, active: 4, recovery: 16, color: '#8be9fd',
+  motion: [[12, 18, 9]],
+  anim: [[0, 'wave'], [12, 'wave'], [16, 'jabW', 'out'], [18, 'flick', 'snap'], [22, 'flick'], [38, 'guard']], mods: [[0, 12, 'wave']],
+  hit: H(40, { stun: 26, height: 'high', kb: [3, 0], box: frontBox(0, -200, 85, 70), status: { id: 'dizzy', frames: 30 }, react: 'hurtHead', spark: 'medium', fx: 'flick' }),
+  contacts: [{ hand: 'n', at: 'face', from: 18, to: 24, onHit: true }],
+  on: { start(f, b) { say(b, f, '¡HOLA!', '#8be9fd', true); } },
+  desc: 'Saludas con la mano como si nada... y avanzas para darle un toque en la frente que lo marea (alto).', tip: 'Agáchate cuando te salude.',
+  ai: { role: 'poke', range: [60, 200] }
+});
+
+def('handshakeHeadbutt', {
+  name: 'Apretón Sigma', cost: 20, cd: 120, startup: 12, active: 6, recovery: 30, color: '#c084fc',
+  anim: [[0, 'guard'], [10, 'offer', 'out'], [18, 'offer'], [48, 'guard']],
+  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 70, 120) },
+  on: {
+    grab(f, b, m, d) {
+      b.startLock(f, d, {
+        frames: 56, off: [t => (t < 26 ? 80 : t < 34 ? 80 - (t - 26) * 1.6 : 68), 0], tpose: t => (t < 34 ? 'offer' : 'held'),
+        anim: [[0, 'offer'], [24, 'offer'], [30, 'shakeGrip', 'out'], [34, 'headbutt', 'snap'], [44, 'headbutt'], [56, 'guard', 'inOut']],
+        // se dan la mano de verdad, tira del rival hacia sí y cabezazo
+        ...handshake(34, 24),
+        hits: [{ f: 36, dmg: 105, spark: 'heavy', fx: 'headbutt', say: 'CABEZAZO SIGMA', sayColor: '#c084fc', last: true, hitstop: 12, react: 'hurtHead' }],
+        end: { kb: [9, -6], knockdown: true }
+      });
+    },
+    end(f, b, m) { if (!m.hit) b.dealDamage(null, f, 10); }
+  },
+  desc: 'Le das la mano con educación, tiras de él y le estampas un cabezazo. Agarre: atraviesa el bloqueo.', tip: 'Salta o castígalo mientras ofrece la mano.',
+  ai: { role: 'grab', range: [0, 95] }
+});
+
+def('doubleSlap', {
+  name: 'Doble Tortazo', cost: 15, cd: 90, startup: 9, active: 14, recovery: 16, color: '#ff9f1c',
+  motion: [[9, 20, 3.6]],
+  anim: [[0, 'bigSlapW'], [9, 'bigSlap', 'snap'], [13, 'slapCross', 'out'], [17, 'backSlap', 'snap'], [23, 'backSlap'], [39, 'guard']],
+  hit: H(38, { stun: 22, kb: [0.8, 0], every: 8, maxHits: 2, box: frontBox(10, -200, 115, 80), react: 'slapped', spark: 'medium', fx: 'slap' }),
+  contacts: [{ hand: 'n', at: 'face', from: 9, to: 14, onHit: true }, { hand: 'n', at: 'face', from: 17, to: 22, onHit: true }],
+  desc: 'Tortazo de ida y revés de vuelta: dos impactos cómicos en la cara.', tip: 'Bloquéalo o agáchate (golpea alto).',
+  ai: { role: 'poke', range: [0, 110] }
+});
+
+def('mewingGlare', {
+  name: 'Mandíbula de Acero', cost: 15, cd: 180, startup: 4, active: 26, recovery: 12, color: '#9be7ff',
+  anim: [[0, 'mew'], [42, 'mew']], mods: [[0, 42, 'menacing']],
+  counter: {
+    from: 4, to: 30, types: ['strike'],
+    on(d, a, hit, src, b) {
+      // el golpe rebota en la mandíbula marcada: el atacante se duele la mano
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      a.move = null; a.setState('hitstun'); a.hitstun = 30; a.reactPose = 'shocked';
+      a.addStatus('dizzy', 40, {}, d);
+      b.dealDamage(d, a, 45);
+      d.addStatus('mewing', 180, {}, d);
+      fx(b, 'jawline', { f: d, big: true }); say(b, d, 'JAWLINE CHECK', '#9be7ff');
+      d.move.f = 30;
+      return true;
+    }
+  },
+  desc: 'Postura de mewing: si te golpean, el puño rebota en tu mandíbula, el rival se marea y tú ganas Mewing.', tip: 'Agárralo o lánzale un proyectil.',
+  ai: { role: 'counter', range: [0, 160] }
+});
+
+def('sigmaTurn', {
+  name: 'Espalda Sigma', cost: 15, cd: 200, startup: 8, active: 44, recovery: 12, color: '#c084fc',
+  anim: [[0, 'guard'], [8, 'sigmaBack', 'inOut'], [52, 'sigmaBack'], [64, 'guard', 'inOut']],
+  counter: {
+    from: 8, to: 52, types: ['strike', 'grab'],
+    on(d, a, hit, src, b) {
+      // ni te mira: aparece a su espalda y le da un codazo
+      b.teleport(d, a.x - a.facing * 70 * a.scale);
+      d.facing = a.facing;
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      a.move = null; a.setState('airhit'); a.grounded = false; a.vx = d.facing * 9; a.vy = -7; a.knockdownOnLand = true; a.y -= 1;
+      b.dealDamage(d, a, 80);
+      fx(b, 'sigmaFinish', { f: d, x: a.x, y: a.y - 100 }); say(b, d, 'NI TE MIRA', '#c084fc');
+      d.move.data.countered = true;
+      d.move.f = 52;
+      return true;
+    }
+  },
+  on: { end(f, b, m) { if (!m.data.countered) { f.gainEnergy(18); f.addStatus('cool', 240, {}, f); } } },
+  desc: 'Le das la espalda con total indiferencia: si te ataca, apareces detrás y le das un codazo; si no, ganas energía y estilo.', tip: 'Agárralo desde lejos, lánzale proyectiles o simplemente no ataques.',
+  ai: { role: 'counter', range: [0, 300] }
+});
+
+def('rizzLean', {
+  name: 'Rizz Apoyado', cost: 20, cd: 300, startup: 14, active: 30, recovery: 14, color: '#ff5fa2',
+  anim: [[0, 'guard'], [14, 'leanWall', 'out'], [44, 'leanWall'], [58, 'guard']],
+  on: {
+    frame(f, b, m, t) {
+      if (t !== 18) return;
+      fx(b, 'rizzWink', { f });
+      for (const d of b.enemiesInRange(f, 340, true, 180)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.crouching || d.isImmune('charmed')) { say(b, d, 'INMUNE AL RIZZ', '#aaaaaa', true); continue; }
+        d.addStatus('charmed', 80, {}, f); b.drain(f, d, 30, 'RIZZEADO', '#ff5fa2'); m.hit = true;
+      }
+    }
+  },
+  desc: 'Te apoyas en una pared invisible y guiñas: si te mira, queda rizzeado y camina hacia ti indefenso.', tip: 'Agáchate o date la vuelta.',
+  ai: { role: 'zone', range: [60, 330] }
+});
+
+def('menacingPose', {
+  name: 'Pose Amenazante', cost: 20, cd: 360, startup: 10, active: 40, recovery: 12, color: '#9b5de5',
+  armor: [0, 50],
+  anim: [[0, 'guard'], [10, 'menace', 'back'], [50, 'menace'], [62, 'guard']], mods: [[10, 50, 'menacing']],
+  on: {
+    frame(f, b, m, t) {
+      if (t >= 10 && t % 8 === 2) fx(b, 'menace', { f });
+      if (t !== 26) return;
+      f.gainEnergy(15);
+      for (const d of b.enemiesInRange(f, 420, true, 200)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.isImmune('fear')) continue;
+        d.addStatus('fear', 60, {}, f); b.drain(f, d, 25, 'ゴゴゴゴ', '#9b5de5'); m.hit = true;
+      }
+    }
+  },
+  desc: 'Pose de manga con ゴゴゴゴ: súper armadura, energía, y quien te mire se asusta y pierde aura.', tip: 'Agárralo: la armadura no para los agarres.',
+  ai: { role: 'buff', range: [100, 420] }
+});
+
+def('tralalero', {
+  name: 'Tralalero Tralala', cost: 25, cd: 180, startup: 16, active: 2, recovery: 18, color: '#4cc9f0',
+  anim: [[0, 'sharkFin'], [14, 'sharkFin'], [16, 'point', 'snap'], [36, 'guard']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'tralalero', { f });
+      b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 9.5, w: 110, h: 64, life: 110, maxHits: 1,
+        hit: H(70, { stun: 20, kb: [6, -9], knockdown: true, fx: 'chomp', spark: 'heavy', react: 'hurtGut' }), src: 'tralalero', staleK: m.staleK });
+    }
+  },
+  desc: 'Invocas al tiburón con zapatillas: corre por el suelo y muerde (70, derriba).', tip: 'Sáltalo o recíbelo bloqueando.',
+  ai: { role: 'zone', range: [180, 1400] }
+});
+
+def('brrPatapim', {
+  name: 'Brr Brr Patapim', cost: 25, cd: 300, startup: 14, active: 1, recovery: 22, color: '#6b8e23',
+  anim: [[0, 'guard'], [14, 'treeArms', 'back'], [37, 'treeArms']], mods: [[14, 37, 'tremble']],
+  on: {
+    active(f, b, m) {
+      const d = b.targetFor(f); if (!d) return;
+      fx(b, 'patapim', { f });
+      b.spawnProjectile(f, { kind: 'roots', x: d.x, y: GROUND_Y - 40, absVx: true, vx: 0, w: 120, h: 90, life: 14, delay: 34, track: d, trackFor: 20, pierce: true, clash: false,
+        hit: H(30, { stun: 20, kb: [0, 0], height: 'low', status: { id: 'patapim', frames: 100 }, react: 'scared' }), src: 'brrPatapim', staleK: m.staleK });
+    }
+  },
+  desc: 'El árbol con pies: unas raíces brotan bajo el rival y lo dejan clavado al suelo casi 2 segundos.', tip: 'Cuando veas la marca, salta o haz dash.',
+  ai: { role: 'zone', range: [150, 1500] }
+});
+
+def('liriliLarila', {
+  name: 'Lirilì Larilà', cost: 25, cd: 360, startup: 18, active: 1, recovery: 16, color: '#a7c957',
+  anim: [[0, 'guard'], [18, 'clockArms', 'back'], [35, 'clockArms']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'lirili', { f });
+      for (const d of b.enemiesInRange(f, 320, false, 220)) {
+        d.addStatus('lirili', 180, {}, f); b.dealDamage(f, d, 25); m.hit = true;
+        b.emit('callout', { f: d, text: 'TIEMPO LENTO', color: '#a7c957', small: true });
+      }
+    }
+  },
+  desc: 'El elefante-cactus del reloj: ralentiza a los rivales cercanos (velocidad y energía) durante 3 s y los pincha.', tip: 'Mantén la distancia cuando lo prepare.',
+  ai: { role: 'zone', range: [0, 300] }
+});
+
+def('ballerinaCappuccina', {
+  name: 'Ballerina Cappuccina', cost: 20, cd: 150, startup: 8, active: 30, recovery: 16, color: '#ffb6c1',
+  invuln: [1, 8], invulnType: 'strike', motion: [[8, 38, 9]],
+  anim: [[0, 'armsUp'], [8, 'pirouette'], [38, 'pirouette'], [44, 'arabesque', 'out'], [54, 'guard']], mods: [[8, 38, 'pirouette']],
+  hit: H(18, { stun: 14, kb: [2, -2], every: 8, maxHits: 4, box: { around: true, w: 120, h: 170, y: 0 }, spark: 'light', fx: 'coffee' }),
+  desc: 'Bailarina con cabeza de capuchino: cruza el escenario en piruetas que golpean 4 veces. Invulnerable al empezar.', tip: 'Bloquéala y castiga el arabesque final.',
+  ai: { role: 'approach', range: [80, 330] }
+});
+
+def('shoulderBrush', {
+  name: 'Quitarse el Polvo', cost: 0, cd: 300, startup: 6, active: 30, recovery: 8, taunt: true, fragile: true, color: '#e0e0e0',
+  anim: [[0, 'guard'], [6, 'brushShoulder'], [36, 'brushShoulder'], [44, 'guard']], mods: [[6, 36, 'brush']],
+  on: {
+    active(f, b, m) {
+      if (m.data.interrupted) return;
+      for (const id of ['tilted', 'mogged', 'fear', 'ratio', 'dizzy']) f.removeStatus(id);
+      f.heal(60); fx(b, 'brushOff', { f }); say(b, f, 'NI ME HA DOLIDO', '#e0e0e0', true);
+      for (const d of b.enemiesInRange(f, 300, false, 200)) if (b.isVulnerableForHumiliation(d) && b.drain(f, d, 25, 'IRRELEVANTE', '#e0e0e0')) m.hit = true;
+    }
+  },
+  desc: 'Te sacudes el hombro con desprecio: limpias estados negativos y recuperas 60 de aura. Humilla a rivales derribados.', tip: 'Es frágil: golpéalo mientras lo hace.',
+  ai: { role: 'humiliate', range: [250, 2000] }
+});
+
+def('defaultDance', {
+  name: 'Baile Default', cost: 0, cd: 400, startup: 6, active: 60, recovery: 8, taunt: true, fragile: true, color: '#50fa7b',
+  anim: [[0, 'guard'], [6, 'danced'], [66, 'danced'], [74, 'guard']], mods: [[6, 66, 'defaultDance']],
+  on: {
+    frame(f, b, m, t) {
+      if (t % 12 === 6) fx(b, 'notes', { f });
+      if (t !== 66 || m.data.interrupted) return;
+      f.gainEnergy(35);
+      for (const d of b.enemiesInRange(f, 420, false, 250)) if (b.isVulnerableForHumiliation(d) && b.drain(f, d, 45, 'BAILADO', '#50fa7b')) m.hit = true;
+    }
+  },
+  desc: 'El baile por defecto, entero: si nadie te interrumpe, +35 de energía y humillas a los rivales en el suelo.', tip: 'Castígalo: deja todo el cuerpo abierto.',
+  ai: { role: 'humiliate', range: [300, 2000] }
+});
+
+def('headPalm', {
+  name: 'Tranquilo, Fiera', cost: 15, cd: 180, startup: 3, active: 22, recovery: 14, color: '#ffd166',
+  anim: [[0, 'holdUp'], [25, 'holdUp'], [39, 'guard']],
+  counter: {
+    from: 3, to: 25, types: ['strike'],
+    on(d, a, hit, src, b) {
+      // le sujeta la cabeza con la palma: el rival da molinetes al aire sin llegar
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      d.move.f = d.move.def.startup + 2;
+      b.startLock(d, a, {
+        frames: 64, off: [74, 0], tpose: t => (Math.floor(t / 5) % 2 ? 'windmillA' : 'windmillB'),
+        anim: [[0, 'headPalm'], [54, 'headPalm'], [58, 'dapW', 'snap'], [64, 'dap', 'snap']],
+        hands: (aa, tt, fr) => { if (fr > 56) return null; const j = tt.joints; return { n: { x: j.headX - aa.facing * j.headR * 0.6, y: j.headY - j.headR * 0.55, w: Math.min(1, fr / 3) } }; },
+        frame: (ff, bb, mm, t, tt) => { if (t % 10 === 5) bb.emit('fx', { name: 'whiff', f: tt }); },
+        hits: [{ f: 30, dmg: 0, drain: 40, say: 'TRANQUILO, FIERA', sayColor: '#ffd166' }, { f: 62, dmg: 55, spark: 'heavy', fx: 'slap', last: true, react: 'hurtGut' }],
+        end: { kb: [10, -5], knockdown: true }
+      });
+      return true;
+    }
+  },
+  desc: 'Contra: le pones la palma en la frente y el rival da molinetes al aire sin alcanzarte. Luego lo empujas.', tip: 'Agárralo, usa un proyectil o espera a que termine.',
+  ai: { role: 'counter', range: [0, 130] }
+});
+
+def('brainrotInvasion', {
+  ...ULT, name: 'Invasión Brainrot', startup: 24, active: 30, recovery: 24, color: '#4cc9f0',
+  anim: [[0, 'sharkFin'], [20, 'sharkFin'], [24, 'point', 'snap'], [54, 'point']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'tralalero', { f, big: true });
+      b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 14, w: 140, h: 80, life: 90, maxHits: 1, scale: 1.4,
+        hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'brainrotInvasion',
+        onHit: (bb, p, dd) => {
+          if (!f.move || f.move.def.id !== 'brainrotInvasion' || f.move.lock) return;
+          p.dead = true;
+          bb.startLock(f, dd, {
+            frames: 150, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
+            anim: [[0, 'point'], [40, 'conduct'], [150, 'conduct']], mods: [[40, 150, 'conduct']],
+            frame: (ff, b2, mm, t, tt) => {
+              if (t === 2) b2.emit('fx', { name: 'brainrot', step: 'shark', f: tt, a: ff });
+              if (t === 40) b2.emit('fx', { name: 'brainrot', step: 'plane', f: tt, a: ff });
+              if (t === 80) b2.emit('fx', { name: 'brainrot', step: 'tung', f: tt, a: ff });
+              if (t === 112) b2.emit('fx', { name: 'brainrot', step: 'ballerina', f: tt, a: ff });
+            },
+            hits: [{ f: 6, dmg: 50, spark: 'heavy', fx: 'chomp' }, { f: 56, dmg: 30, spark: 'heavy', fx: 'boom' }, { f: 64, dmg: 30, spark: 'heavy', fx: 'boom' }, { f: 72, dmg: 30, spark: 'heavy', fx: 'boom' },
+              { f: 90, dmg: 40, spark: 'heavy', fx: 'tung' }, { f: 98, dmg: 40, spark: 'heavy', fx: 'tung' }, { f: 132, dmg: 90, spark: 'mega', fx: 'coffee', say: 'BRAINROT TOTAL', sayColor: '#4cc9f0', last: true, hitstop: 18 }],
+            end: { kb: [10, -11], knockdown: true }
+          });
+        } });
+    }
+  },
+  desc: 'El tiburón con zapatillas abre paso; si muerde, llegan el cocodrilo bombardero, Tung Tung Sahur y la bailarina capuchino (≈310).', tip: 'Salta al tiburón inicial.',
+  ai: { role: 'ult', range: [0, 1300] }
+});
+
+def('mainCharacterEnding', {
+  ...ULT, name: 'Final de Protagonista', startup: 20, active: 40, recovery: 20, color: '#ffe066',
+  anim: [[0, 'pockets'], [60, 'pockets']],
+  on: {
+    frame(f, b, m, t) {
+      if (t !== 20) return;
+      const d = b.targetFor(f); if (!d) return;
+      b.spawnProjectile(f, { kind: 'none', x: d.x, y: GROUND_Y - 100, absVx: true, vx: 0, w: 120, h: 200, life: 10, delay: 26, track: d, trackFor: 20, pierce: true, clash: false,
+        hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'mainCharacterEnding',
+        onHit: (bb, p, dd) => {
+          if (!f.move || f.move.def.id !== 'mainCharacterEnding' || f.move.lock) return;
+          f.addStatus('cool', 300, {}, f);
+          bb.startLock(f, dd, {
+            // el protagonista se aleja sin mirar mientras todo explota a su espalda
+            frames: 130, off: [t => Math.max(80, (dd.x - f.x) * f.facing / f.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
+            anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [130, 'walkAway']],
+            frame: (ff, b2, mm, t, tt) => {
+              if (t > 14 && t < 100) ff.x -= ff.facing * 2.2;
+              if (t === 20) b2.emit('fx', { name: 'credits', f: ff });
+              if (t === 92) b2.emit('fx', { name: 'explosion', x: tt.x, y: tt.y - 80, big: true });
+            },
+            hits: [{ f: 40, dmg: 20, spark: 'light' }, { f: 92, dmg: 240, spark: 'mega', fx: 'boom', say: 'COOL GUYS DON\'T LOOK AT EXPLOSIONS', sayColor: '#ffe066', last: true, hitstop: 20 }],
+            end: { kb: [7, -12], knockdown: true }
+          });
+        } });
+    }
+  },
+  desc: 'Marcas al rival con un foco, te pones las gafas y te alejas sin mirar mientras explota a tu espalda (≈260).', tip: 'Cuando aparezca el foco, sal con dash.',
+  ai: { role: 'ult', range: [0, 2000] }
+});
+
 // Contactos automáticos: los movimientos de bofetada/palmada llevan la mano a la cara (o al pecho) al conectar.
 for (const m of Object.values(MOVES)) {
   if (m.contacts || !m.anim) continue;

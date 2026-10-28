@@ -153,6 +153,21 @@ export const POSES = {
   gulp: P({ lean: -8, head: -6, hip: [0, -74], hn: [8, -10], hf: [-6, 54], hsn: 'flat', hsf: 'relaxed', rn: -150, fn: [10, 0], ff: [-14, 0], face: 'shock' }),
   spinKick: P({ lean: -20, hip: [0, -78], hn: [-36, 0], hf: [30, -10], en: BACK, fn: [70, -70], ff: [-10, 0], kn: [0.4, -1], face: 'angry' }),
   stomp: P({ lean: 16, hip: [0, -70], hn: [20, 10], hf: [-24, 14], fn: [30, -40], ff: [-14, 0], kn: KNEE_IN, face: 'angry' }),
+  // ---------- nuevas técnicas ----------
+  slapCross: P({ lean: 10, hip: [6, -72], hn: [8, -22], hf: [-18, 26], en: DOWN, hsn: 'flat', rn: -90, fn: [30, 0], ff: [-24, 0], face: 'smug' }),
+  backSlap: P({ lean: 24, hip: [12, -70], hn: [58, -20], hf: [-22, 24], en: [0.2, 1], hsn: 'flat', rn: -90, fn: [36, 0], ff: [-26, 0], face: 'angry' }),
+  palmSlam: P({ lean: 42, head: 10, hip: [6, -44], hn: [44, 52], hf: [36, 56], en: OUT, ef: OUT, hsn: 'palm', hsf: 'palm', rn: 90, rf: 90, fn: [30, 0], ff: [-26, 0], face: 'angry' }),
+  flick: P({ lean: 18, hip: [8, -72], hn: [56, -36], hf: [-10, 40], en: DOWN, hsn: 'snap', hsf: 'relaxed', rn: -20, fn: [30, 0], ff: [-22, 0], face: 'smug' }),
+  leanWall: P({ lean: -16, head: -10, hip: [-6, -76], hn: [-44, -40], hf: [6, 40], en: UP, hsn: 'flat', hsf: 'relaxed', rn: 180, fn: [18, 0], ff: [6, -4], kf: [1, 0.6], face: 'rizz' }),
+  windmillA: P({ lean: 6, head: -16, hip: [0, -76], hn: [30, -50], hf: [-34, 30], en: UP, ef: BACK, hsn: 'fist', hsf: 'fist', fn: [16, 0], ff: [-14, 0], face: 'angry' }),
+  windmillB: P({ lean: 6, head: -16, hip: [0, -76], hn: [34, 30], hf: [-28, -50], en: DOWN, ef: UP, hsn: 'fist', hsf: 'fist', fn: [16, 0], ff: [-14, 0], face: 'angry' }),
+  headPalm: P({ lean: -6, head: -8, hip: [-4, -78], hn: [58, -26], hf: [-10, 42], en: DOWN, hsn: 'palm', hsf: 'relaxed', rn: 90, fn: [16, 0], ff: [-16, 0], face: 'chill' }),
+  brushShoulder: P({ lean: -4, head: 16, hip: [0, -76], hn: [-4, 2], hf: [-8, 50], en: OUT, hsn: 'flat', hsf: 'relaxed', rn: -150, fn: [12, 0], ff: [-12, 0], face: 'chill' }),
+  sigmaBack: P({ lean: 2, head: -4, hip: [0, -78], hn: [10, 10], hf: [-6, 12], en: OUT, ef: OUT, hsn: 'fist', hsf: 'fist', fn: [10, 0], ff: [-10, 0], spin: 180, face: 'stare' }),
+  elbow: P({ lean: 30, hip: [10, -70], hn: [26, -10], hf: [-10, 20], en: [1, -0.6], fn: [34, 0], ff: [-26, 0], face: 'stare' }),
+  treeArms: P({ lean: 0, head: -14, hip: [0, -78], hn: [30, -54], hf: [-26, -50], en: OUT, ef: OUT, hsn: 'claw', hsf: 'claw', fn: [26, 0], ff: [-26, 0], face: 'angry' }),
+  clockArms: P({ lean: -2, head: -6, hip: [0, -78], hn: [0, -58], hf: [42, -6], en: OUT, ef: DOWN, hsn: 'point', hsf: 'point', fn: [12, 0], ff: [-12, 0], face: 'stare' }),
+  walkAway: P({ lean: 2, head: -6, hip: [0, -76], hn: [6, 40], hf: [-6, 40], en: [-1, 0.2], ef: [-1, 0.2], hsn: 'hidden', hsf: 'hidden', fn: [12, 0], ff: [-12, 0], spin: 180, face: 'chill' }),
   twerkless: P({ lean: 28, hip: [-8, -60], hn: [30, 30], hf: [24, 36], hsn: 'flat', hsf: 'flat', fn: [26, 0], ff: [-26, 0], face: 'laugh' })
 };
 
@@ -214,6 +229,23 @@ export const MODS = {
   snapAlt(p, f) { const s = S(f * 0.34); p.hn[1] = -12 + Math.max(0, s) * -10; p.hf[1] = -8 + Math.max(0, -s) * -10; p.head = -8 + s * 3; },
   pirouette(p, f) { p.spin = (f * 30) % 360; p.hip[1] = -86 + S(f * 0.3) * 2; },
   scared(p, f) { p.hip[0] += S(f * 2.4) * 2; p.head += S(f * 2) * 3; },
+  // paseo con chasquidos: la mano que chasquea sube junto a la cabeza al ritmo (cada 15 fotogramas)
+  snapBeat(p, f) {
+    const beat = Math.floor(f / 15) % 2, k = f % 15, pop = k < 4 ? 1 - k / 4 : 0;
+    const up = [24, -40 - pop * 4], low = [-16, 2];
+    if (beat) { p.hn = up; p.hf = low; } else { p.hf = [20, -38 - pop * 4]; p.hn = [10, 6]; }
+    p.hsn = 'snap'; p.hsf = 'snap'; p.head = -10 + (beat ? 4 : -4) + pop * 3; p.lean = -6;
+    p.hip[1] = -76 + Math.abs(S(f * Math.PI / 15)) * 2;
+  },
+  brush(p, f) { const s = S(f * 0.6); p.hn = [-2 + s * 6, 0 + s * 8]; p.head = 18 + s * 3; },
+  // baile "default": brazos alternos y rodillas
+  defaultDance(p, f) {
+    const s = S(f * 0.42), c = C(f * 0.42);
+    p.hn = [30 * s + 6, -20 + c * 20]; p.hf = [-30 * s - 6, -20 - c * 20]; p.hsn = 'fist'; p.hsf = 'fist';
+    p.hip[0] = s * 6; p.hip[1] = -70 + Math.abs(c) * 6; p.lean = s * 6; p.head = c * 8;
+    p.fn = [16 + s * 6, s > 0.5 ? -10 : 0]; p.ff = [-16 + s * 6, s < -0.5 ? -10 : 0];
+  },
+  menacing(p, f) { p.lean += S(f * 0.1) * 2; p.head += S(f * 0.13) * 3; p.hn[1] += S(f * 0.2) * 2; },
   shiver(p, f) { p.hn[0] += S(f * 3) * 2; p.hf[0] += S(f * 3.3) * 2; }
 };
 
