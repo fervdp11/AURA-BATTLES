@@ -267,6 +267,8 @@ export class Battle {
     this.timer = this.timerMax;
     this.projectiles.length = 0;
     this.timeStop = null; this.domain = null;
+    // los señuelos (clones) no sobreviven al cambio de ronda
+    this.fighters = this.fighters.filter(f => !f.decoyOf);
     for (const f of this.fighters) {
       f.alive = true; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
       f.status.length = 0; f.move = null; f.grounded = true; f.facing = f.team === 0 ? 1 : -1;
