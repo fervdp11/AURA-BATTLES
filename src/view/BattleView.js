@@ -1,5 +1,5 @@
 // Vista del combate: dibuja luchadores, proyectiles y estados; traduce eventos de la simulación en
-// efectos, sonido, voz, reacciones del público y cámara dinámica.
+// efectos, sonido, reacciones del escenario y cámara dinámica.
 import { Arena } from './Arena.js';
 import { FX } from './FX.js';
 import { drawFighter, drawBody, hex, shade, hsl, heartShape, mix } from './StickRenderer.js';
@@ -29,8 +29,9 @@ export class BattleView {
   constructor(scene, battle, opts = {}) {
     this.scene = scene; this.b = battle; this.opts = opts;
     this.shakeMul = opts.shake ?? 1;
-    this.arena = new Arena(scene, opts.arena || 'rooftop');
+    this.arena = new Arena(scene, opts.arena || 'rooftop', { quality: opts.quality });
     const add = scene.add;
+    this.gRefl = add.graphics().setDepth(-50).setAlpha(this.arena.reflect);
     this.gShadow = add.graphics().setDepth(-5);
     this.gBack = add.graphics().setDepth(5);
     this.gGlow = add.graphics().setDepth(8).setBlendMode('ADD');
@@ -54,7 +55,7 @@ export class BattleView {
     this.vignette = null;
     this.bloom = null;
     if (opts.quality !== 'baja' && this.cam.postFX) {
-      try { this.bloom = this.cam.postFX.addBloom(0xffffff, 1, 1, 0.8, 0.55, 2); } catch (e) { this.bloom = null; }
+      // sin bloom de cámara: sin umbral lava los colores; el brillo lo aportan las capas aditivas propias
       try { this.vignette = this.cam.postFX.addVignette(0.5, 0.5, 0.92, 0.35); } catch (e) { this.vignette = null; }
     }
     for (const f of battle.fighters) this.lookFor(f);
@@ -98,7 +99,7 @@ export class BattleView {
   // ------------------------------------------------------------
   drawFighters() {
     const b = this.b, gb = this.gBody, gg = this.gGlow, go = this.gOver, ga = this.gOverAdd, gs = this.gShadow, gk = this.gBack;
-    gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear();
+    gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear(); this.gRefl.clear();
     const list = [...b.fighters].sort((a, c) => (a.alive ? 1 : 0) - (c.alive ? 1 : 0) || (a.state === 'attack' ? 1 : 0) - (c.state === 'attack' ? 1 : 0));
     const multi = b.fighters.filter(f => !f.decoyOf).length > 2;
     for (const f of list) {
@@ -106,8 +107,19 @@ export class BattleView {
       if (f.decoyOf) Object.assign(look, this.lookFor(f.decoyOf));
       // sombra
       const hAbove = Math.max(0, GROUND_Y - f.y);
-      if (f.visible) { gs.fillStyle(0x000000, 0.35 * Math.max(0.2, 1 - hAbove / 400)); gs.fillEllipse(f.x, GROUND_Y + 4, 70 * f.scale * Math.max(0.4, 1 - hAbove / 500), 14 * f.scale); }
+      if (f.visible) {
+        // sombra suave en capas + sombras de contacto bajo cada pie apoyado
+        const k = Math.max(0.2, 1 - hAbove / 400), wsh = 74 * f.scale * Math.max(0.4, 1 - hAbove / 500);
+        for (let i = 0; i < 3; i++) { gs.fillStyle(0x000000, 0.12 * k); gs.fillEllipse(f.x, GROUND_Y + 4, wsh * (1.3 - i * 0.2), 16 * f.scale * (1.2 - i * 0.15)); }
+        const j = f.joints;
+        for (const fx2 of [j.nFootX, j.fFootX]) { const fy = j[fx2 === j.nFootX ? 'nFootY' : 'fFootY'], c = Math.max(0, 1 - (GROUND_Y - fy) / 40); if (c > 0) { gs.fillStyle(0x000000, 0.3 * c); gs.fillEllipse(fx2, GROUND_Y + 2, 22 * f.scale, 6 * f.scale); } }
+      }
       if (!f.visible) continue;
+      // reflejo en suelos brillantes
+      if (this.arena.reflect > 0 && f.alive !== undefined) {
+        const rj = mirrorJoints(f.joints, _reflJ);
+        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t });
+      }
       // KO en 1vN: desvanecer
       let alpha = f.alpha ?? 1;
       if (!f.alive && !b.lastKO?.final && b.lastKO?.f !== f && f.grounded) { f.koFade = (f.koFade || 0) + 1; alpha *= Math.max(0, 1 - Math.max(0, f.koFade - 60) / 40); if (alpha <= 0) continue; }
@@ -219,10 +231,21 @@ export class BattleView {
     if (box && f.move && f.move.def.hit && f.move.def.hit.box && f.move.def.hit.box.joint) {
       const jn = f.move.def.hit.box.joint;
       tr.push({ x: f.joints[jn + 'X'], y: f.joints[jn + 'Y'], a: 1 });
-    }
+    } else if (f.state === 'attack' && f.move) {
+      // smear: sigue la extremidad que más rápido se mueve durante el golpe
+      const prev = f._ext || (f._ext = {});
+      let best = null, bv = 9 * f.scale, bj = null;
+      for (const jn of ['nHand', 'fHand', 'nFoot', 'fFoot']) {
+        const x = f.joints[jn + 'X'], y = f.joints[jn + 'Y'];
+        if (prev[jn]) { const v = Math.hypot(x - prev[jn][0], y - prev[jn][1]) - Math.abs(f.vx); if (v > bv) { bv = v; best = [x, y]; bj = jn; } }
+        prev[jn] = [x, y];
+      }
+      if (best) tr.push({ x: best[0], y: best[1], a: 0.8, jn: bj });
+    } else if (f._ext) f._ext = null;
     const g = this.gGlow;
     for (let i = 1; i < tr.length; i++) {
       const a = tr[i - 1], c = tr[i];
+      if (a.jn !== c.jn) continue;
       g.lineStyle(10 * f.scale * c.a, look.aura, 0.55 * c.a); g.lineBetween(a.x, a.y, c.x, c.y);
       g.lineStyle(4 * f.scale * c.a, 0xffffff, 0.8 * c.a); g.lineBetween(a.x, a.y, c.x, c.y);
     }
@@ -299,7 +322,7 @@ export class BattleView {
         case 'invisible': ga.lineStyle(2, 0xffffff, 0.12 + Math.sin(t * 0.8) * 0.06); ga.strokeCircle(x, y, 14 + Math.sin(t * 0.5) * 3); ga.strokeCircle(x - d * 14, y, 9); break;
         case 'ghost': {
           copyPose(POSES.dash, _ghostPose); MODS.airRun(_ghostPose, p.age * 1.5);
-          _ghostPose.na[0] = 86; _ghostPose.na[1] = 94;
+          _ghostPose.hn[0] = 50; _ghostPose.hn[1] = -6; _ghostPose.hf[0] = 44; _ghostPose.hf[1] = 2;
           computeJoints(_ghostPose, x, y + 70, d, p.owner.scale, false, _ghostJ);
           drawBody(ga, null, _ghostJ, _ghostPose, p.owner.scale, look, 0.6, { ghost: true, ghostColor: 0xb9a7ff });
           break;
@@ -404,6 +427,8 @@ export class BattleView {
         fx.flash(e.x, e.y, col, e.strength === 'mega' ? 2.4 : e.strength === 'heavy' ? 1.5 : 0.9);
         if (e.strength !== 'light') fx.ring(e.x, e.y, col, e.strength === 'mega' ? 2.2 : e.strength === 'heavy' ? 1.3 : 0.8);
         if (e.counterHit) fx.ring(e.x, e.y, 0xff3030, 1.6);
+        if (e.strength !== 'light') fx.starburst(e.x, e.y, col, e.strength === 'mega' ? 2 : e.strength === 'heavy' ? 1.4 : 0.9, dir);
+        if (e.strength === 'mega' || (e.strength === 'heavy' && e.counterHit)) this.impactFrame();
         this.sfxAt(STRENGTH_SFX[e.strength] || 'hitLight', e.x, { pitch: 0.92 + Math.random() * 0.16, minGap: 0.02 });
         this.shake(e.strength);
         if (e.strength === 'heavy' || e.strength === 'mega') { this.cs.punch += e.strength === 'mega' ? 0.08 : 0.035; this.arena.react('ooh', 0.4); }
@@ -509,7 +534,7 @@ export class BattleView {
         this.sfx('teleport');
         break;
       }
-      case 'step': if (Math.abs(e.f.vx) > 3) fx.dust(e.x, GROUND_Y, 2, 0xcfc6b8, -Math.sign(e.f.vx) * e.f.facing); this.sfxAt('step', e.x, { gain: Math.min(1, 0.4 + Math.abs(e.f.vx) * 0.08), minGap: 0.05 }); break;
+      case 'step': if (Math.abs(e.f.vx) > 3) fx.dust(e.x, GROUND_Y, 2, 0xcfc6b8, -Math.sign(e.f.vx) * e.f.facing, 0.5); this.sfxAt('step', e.x, { gain: Math.min(1, 0.4 + Math.abs(e.f.vx) * 0.08), minGap: 0.05 }); break;
       case 'jump': fx.dust(e.f.x, GROUND_Y, e.double ? 4 : 6); this.sfx('jump'); break;
       case 'land': fx.dust(e.f.x, GROUND_Y, e.heavy ? 14 : 8); this.sfx('land'); if (e.heavy) this.shake('medium'); break;
       case 'dash': fx.dust(e.f.x, GROUND_Y, 6, 0xcfc6b8, -e.f.facing * e.dir); this.sfx('dash'); break;
@@ -561,10 +586,21 @@ export class BattleView {
     }
   }
 
+  // fotograma de impacto: inversión de color durante 3 fotogramas (estilo anime)
+  impactFrame() {
+    if (this.opts.quality === 'baja' || !this.cam.postFX || this.colorFx || this._impact) return;
+    try {
+      const fxm = this.cam.postFX.addColorMatrix(); fxm.negative(); fxm.contrast(0.6, true);
+      this._impact = fxm;
+      this.scene.time.delayedCall(55, () => { try { this.cam.postFX.remove(fxm); } catch (err) { /* sin postFX */ } this._impact = null; });
+    } catch (err) { this._impact = null; }
+  }
+
   onMove(e) {
     const f = e.f, d = e.def;
     if (d.slot === 'basic') {
       this.sfx(d.weight === 'heavy' ? 'whooshHeavy' : 'whoosh', { pitch: 0.9 + Math.random() * 0.25 });
+      if (d.weight === 'heavy') this.scene.time.delayedCall(d.startup * 16, () => { if (f.state === 'attack' && f.move && f.move.def === d) this.fx.slash(f.x + f.facing * 40 * f.scale, f.y - 110 * f.scale, f.facing, this.lookFor(f).aura, 70 * f.scale); });
       return;
     }
     if (d.slot === 'hidden') { this.sfx('whoosh'); return; }
@@ -697,12 +733,20 @@ export class BattleView {
   destroy() {
     this.arena.destroy();
     this.fx.destroy();
-    for (const g of [this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
+    for (const g of [this.gRefl, this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
     if (this.cam.postFX) { try { this.cam.postFX.clear(); } catch (e) { /* nada */ } }
   }
 }
 
 const STATUS_COL = { chill: 0x7fd6a0, goblin: 0x66cc33, infMewing: 0x6fd8ff };
+
+const _reflJ = {};
+function mirrorJoints(j, o) {
+  for (const k in j) o[k] = j[k];
+  for (const k in j) if (k.endsWith('Y') && typeof j[k] === 'number') o[k] = 2 * GROUND_Y - j[k];
+  o.headAng = 180 - (j.headAng || 0); o.lean = 180 - (j.lean || 0);
+  return o;
+}
 
 function shiftAll(j, dx) {
   for (const k in j) if (k.endsWith('X') && typeof j[k] === 'number') j[k] += dx;

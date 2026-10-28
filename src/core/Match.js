@@ -19,7 +19,8 @@ export function botProfile(bot) {
 export function buildBattle(spec) {
   const d = Save.d;
   const fighters = [];
-  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0 });
+  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0,
+    controller: spec.aiPlayer ? new AIController({ level: spec.aiPlayer, style: 'balanced', seed: 99 }) : undefined });
   spec.enemies.forEach((bot, i) => {
     const level = spec.levelOverride ?? bot.level;
     const ctrl = spec.mode === 'training' ? new DummyController(spec.dummyMode || 'stand') : new AIController({ level, style: bot.style, seed: (Date.now() + i * 7919) & 0xffffff });

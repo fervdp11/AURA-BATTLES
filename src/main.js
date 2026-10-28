@@ -20,6 +20,7 @@ import { ResultScene } from './scenes/ResultScene.js';
 import { MoveListScene } from './scenes/MoveListScene.js';
 import { Audio } from './core/Audio.js';
 import { Save } from './core/Save.js';
+import { quickOpponents } from './core/Match.js';
 
 const config = {
   type: Phaser.WEBGL,
@@ -41,5 +42,5 @@ Promise.race([
   new Promise(r => setTimeout(r, 2500))
 ]).finally(() => {
   window.game = new Phaser.Game(config);
-  window.__AURA = { Audio, Save }; // acceso para depuración desde la consola
+  window.__AURA = { Audio, Save, quickOpponents }; // acceso para depuración desde la consola
 });

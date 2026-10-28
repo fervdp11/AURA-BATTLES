@@ -48,11 +48,11 @@ export class FX {
       this.p(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 10 + Math.random() * 14, 2 + Math.random() * 2.5, color, 'streak', { drag: 0.88, len: 2.2 });
     }
   }
-  dust(x, y, n = 8, color = 0xcfc6b8, dir = 0) {
-    n = Math.round(n * this.q);
+  dust(x, y, n = 8, color = 0xcfc6b8, dir = 0, size = 1) {
+    n = Math.max(1, Math.round(n * this.q));
     for (let i = 0; i < n; i++) {
       const a = Math.PI + Math.random() * Math.PI;
-      this.p(x + (Math.random() - 0.5) * 30, y - 4, Math.cos(a) * (2 + Math.random() * 3) + dir * 2, Math.sin(a) * (1 + Math.random() * 2), 24 + Math.random() * 18, 6 + Math.random() * 8, color, 'puff', { add: false, drag: 0.9, grav: -0.02 });
+      this.p(x + (Math.random() - 0.5) * 30 * size, y - 4, (Math.cos(a) * (2 + Math.random() * 3) + dir * 2) * size, Math.sin(a) * (1 + Math.random() * 2) * size, 24 + Math.random() * 18, (6 + Math.random() * 8) * size, color, 'puff', { add: false, drag: 0.9, grav: -0.02 });
     }
   }
   motes(x, y, color, n = 1, spread = 30) {
@@ -90,6 +90,33 @@ export class FX {
       this.temps.push({ type: 'bolt', pts: bp, color, width: width * 0.5, life: life * 0.7, max: life * 0.7 });
     }
   }
+  // estallido de impacto estilo anime: estrella dentada con núcleo blanco y líneas radiales
+  starburst(x, y, color, size = 1, dir = 0) {
+    const n = 9, pts = [];
+    for (let i = 0; i < n * 2; i++) { const a = i / (n * 2) * Math.PI * 2 + Math.random() * 0.2; const r = (i % 2 ? 0.42 : 1) * (0.8 + Math.random() * 0.4); pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
+    const rays = Array.from({ length: 10 }, () => [dir + (Math.random() - 0.5) * 2.6, 0.7 + Math.random() * 0.8]);
+    this.temps.push({ type: 'custom', life: 7, max: 7, draw: (gt, gn, k) => {
+      const R = 46 * size * (1.2 - k * 0.4);
+      gt.fillStyle(color, 0.75 * k); gt.beginPath(); gt.moveTo(x + pts[0][0] * R * 1.25, y + pts[0][1] * R * 1.25);
+      for (const p2 of pts) gt.lineTo(x + p2[0] * R * 1.25, y + p2[1] * R * 1.25); gt.closePath(); gt.fillPath();
+      gt.fillStyle(0xffffff, k); gt.beginPath(); gt.moveTo(x + pts[0][0] * R * 0.7, y + pts[0][1] * R * 0.7);
+      for (const p2 of pts) gt.lineTo(x + p2[0] * R * 0.7, y + p2[1] * R * 0.7); gt.closePath(); gt.fillPath();
+      for (const [a, l] of rays) { const r0 = R * 0.9, r1 = R * (1.2 + l * (1.6 - k)); gt.lineStyle(3 * size * k, 0xffffff, k); gt.lineBetween(x + Math.cos(a) * r0, y + Math.sin(a) * r0, x + Math.cos(a) * r1, y + Math.sin(a) * r1); }
+    } });
+  }
+  // arco de barrido (smear) para golpes pesados
+  slash(x, y, dir, color, r = 70, a0 = -1.1, a1 = 0.9) {
+    this.temps.push({ type: 'custom', life: 8, max: 8, draw: (gt, gn, k) => {
+      const segs = 10;
+      for (let i = 0; i < segs; i++) {
+        const t0 = i / segs, t1 = (i + 1) / segs;
+        const b0 = a0 + (a1 - a0) * t0, b1 = a0 + (a1 - a0) * t1;
+        const c0 = dir > 0 ? b0 : Math.PI - b0, c1 = dir > 0 ? b1 : Math.PI - b1;
+        gt.lineStyle((4 + t1 * 14) * k, i > segs * 0.6 ? 0xffffff : color, (0.25 + t1 * 0.7) * k);
+        gt.lineBetween(x + Math.cos(c0) * r, y + Math.sin(c0) * r, x + Math.cos(c1) * r, y + Math.sin(c1) * r);
+      }
+    } });
+  }
   beam(x1, y1, x2, y2, color, width, life) { this.temps.push({ type: 'beam', x1, y1, x2, y2, color, width, life, max: life }); }
   pillar(x, color, width, life) { this.temps.push({ type: 'pillar', x, color, width, life, max: life }); }
   marker(x, y, color, life, kind = 'shadow') { this.temps.push({ type: kind, x, y, color, life, max: life }); }
@@ -124,7 +151,11 @@ export class FX {
         gg.lineStyle(p.size * (0.5 + k), p.color, k);
         gg.lineBetween(p.x, p.y, p.x - p.vx * p.len, p.y - p.vy * p.len);
       } else if (p.type === 'puff') {
-        gg.fillStyle(p.color, 0.35 * k); gg.fillCircle(p.x, p.y, p.size * (1.6 - k * 0.6));
+        // nube suave: halo exterior tenue + núcleo
+        const rr = p.size * (1.6 - k * 0.6);
+        gg.fillStyle(p.color, 0.1 * k); gg.fillCircle(p.x, p.y, rr * 1.35);
+        gg.fillStyle(p.color, 0.16 * k); gg.fillCircle(p.x, p.y, rr);
+        gg.fillStyle(p.color, 0.12 * k); gg.fillCircle(p.x - rr * 0.2, p.y - rr * 0.2, rr * 0.55);
       } else {
         gg.fillStyle(p.color, k); gg.fillCircle(p.x, p.y, p.size * (0.4 + k * 0.6));
       }
