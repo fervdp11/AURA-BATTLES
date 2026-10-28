@@ -286,7 +286,7 @@ export class BattleView {
         case 'brokenHeart': heartShape(g, x, y, 14, 0x9b1b30, 1); g.lineStyle(3, 0x1a0005, 1); g.beginPath(); g.moveTo(x, y - 10); g.lineTo(x - 4, y - 2); g.lineTo(x + 3, y + 3); g.lineTo(x - 1, y + 12); g.strokePath(); break;
         case 'invisible': ga.lineStyle(2, 0xffffff, 0.12 + Math.sin(t * 0.8) * 0.06); ga.strokeCircle(x, y, 14 + Math.sin(t * 0.5) * 3); ga.strokeCircle(x - d * 14, y, 9); break;
         case 'ghost': {
-          copyPose(POSES.dash, _ghostPose); MODS.walkLegs(_ghostPose, p.age * 1.5);
+          copyPose(POSES.dash, _ghostPose); MODS.airRun(_ghostPose, p.age * 1.5);
           _ghostPose.na[0] = 86; _ghostPose.na[1] = 94;
           computeJoints(_ghostPose, x, y + 70, d, p.owner.scale, false, _ghostJ);
           drawBody(ga, null, _ghostJ, _ghostPose, p.owner.scale, look, 0.6, { ghost: true, ghostColor: 0xb9a7ff });

@@ -24,6 +24,46 @@ const say = (b, f, text, color = '#ffffff', small = false) => b.emit('callout', 
 const fx = (b, name, data) => b.emit('fx', { name, ...data });
 const total = d => d.startup + d.active + d.recovery;
 
+// ---- contactos de manos (el rig IK lleva la mano exactamente al punto) ----
+// Punto donde se encuentran las dos manos en un apretón: entre ambos hombros, con sacudida vertical.
+const shakePoint = (a, t, fr, shake) => {
+  const ja = a.joints, jt = t.joints;
+  const x = (ja.shX + jt.shX) / 2;
+  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? Math.sin(fr * 0.75) * 7 * a.scale : 0);
+  return { x, y };
+};
+const ramp = (fr, a, b) => Math.max(0, Math.min(1, (fr - a + 1) / 4, (b - fr + 1) / 4));
+// mano del atacante en la cara del agarrado
+const faceHit = (a, t, hand, from, to, fr, at = 'face') => {
+  const w = ramp(fr, from, to);
+  if (w <= 0) return null;
+  const p = contactPointOf(t, at, a.facing);
+  return p ? { x: p[0], y: p[1], w } : null;
+};
+function contactPointOf(t, at, facing) {
+  const j = t.joints, s = t.scale;
+  if (at === 'face') return [j.headX - facing * j.headR * 0.9, j.headY + j.headR * 0.2];
+  if (at === 'chest') return [j.neckX * 0.7 + j.hipX * 0.3 - facing * 11 * s, j.neckY * 0.7 + j.hipY * 0.3];
+  if (at === 'gut') return [j.neckX * 0.3 + j.hipX * 0.7 - facing * 11 * s, j.neckY * 0.3 + j.hipY * 0.7];
+  if (at === 'top') return [j.headX, j.headY - j.headR];
+  if (at === 'shoulder') return [j.shX - facing * 8 * s, j.shY];
+  return null;
+}
+// apretón de manos: ambos sacuden la mano cercana en el mismo punto hasta 'release'
+const handshake = (release, shakeTo, extra) => ({
+  hands: (a, t, fr) => {
+    const o = {};
+    if (fr <= release) { const p = shakePoint(a, t, fr, fr <= shakeTo); o.n = { x: p.x, y: p.y, w: Math.min(1, fr / 4) }; }
+    if (extra) { const e = extra(a, t, fr); if (e) Object.assign(o, e); }
+    return o;
+  },
+  thands: (a, t, fr) => {
+    if (fr > release) return null;
+    const p = shakePoint(a, t, fr, fr <= shakeTo);
+    return { n: { x: p.x, y: p.y, w: Math.min(1, fr / 4) } };
+  }
+});
+
 // =====================================================================
 // BÁSICOS
 // =====================================================================
@@ -118,9 +158,10 @@ def('fakeHandshake', {
   on: {
     grab(f, b, m, d) {
       b.startLock(f, d, {
-        frames: 70, off: [62, 0], tpose: t => t < 42 ? 'offer' : 'held',
-        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [70, 'slap']],
-        mods: [[0, 32, 'shake']],
+        frames: 60, off: [80, 0], tpose: t => t < 40 ? 'offer' : 'held',
+        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [52, 'slap'], [60, 'guard', 'inOut']],
+        // los dos se dan la mano de verdad; al soltarla, la misma mano vuelve con un tortazo a la mejilla
+        ...handshake(36, 30, (a, t, fr) => { const h = faceHit(a, t, 'n', 43, 52, fr); return h ? { n: h } : null; }),
         hits: [{ f: 44, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12 }],
         end: { kb: [10, -7], knockdown: true }
       });
@@ -703,8 +744,9 @@ def('cooked', {
     grab(f, b, m, d) {
       if (d.auraPct > 0.3) { b.dealDamage(f, d, 30); d.setState('hitstun'); d.hitstun = 14; say(b, f, 'NO ESTÁ COCINADO', '#888888', true); m.hit = true; return; }
       b.startLock(f, d, {
-        frames: 60, off: [58, 0], tpose: 'held', cine: true,
+        frames: 60, off: [74, 0], tpose: 'held', cine: true,
         anim: [[0, 'bonkW'], [20, 'bonkW'], [26, 'bonk', 'snap'], [44, 'bonkW'], [50, 'bonk', 'snap'], [60, 'bonk']],
+        hands: (a, t, fr) => { const w1 = faceHit(a, t, 'n', 25, 32, fr, 'top') || faceHit(a, t, 'n', 49, 60, fr, 'top'); return w1 ? { n: w1 } : null; },
         hits: [{ f: 26, dmg: 50, spark: 'heavy', fx: 'pan' }, { f: 50, dmg: 90, spark: 'mega', fx: 'pan', say: 'COOKED 🍳', last: true }],
         end: { kb: [9, -8], knockdown: true }
       });
@@ -839,7 +881,7 @@ def('bigBrain', {
 def('narutoRun', {
   name: 'Naruto Run', cost: 10, cd: 90, startup: 4, active: 36, recovery: 8, voice: '', color: '#ffa040',
   motion: [[4, 40, 12]], speedScaled: true,
-  anim: [[0, 'naruto'], [44, 'naruto']], mods: [[0, 40, 'walkLegs']],
+  anim: [[0, 'naruto'], [44, 'naruto']],
   hit: H(40, { stun: 18, kb: [8, 0], maxHits: 1, box: frontBox(0, -150, 50, 120) }),
   on: {
     start(f) { f.addStatus('narutoRun', 40, {}, f); f.trail = 40; },
@@ -1211,7 +1253,7 @@ def('sixSevenBarrage', {
       for (let i = 0; i < 16; i++) hits.push({ f: 12 + i * 5, dmg: 11, spark: 'light', fx: 'sixseven' });
       hits.push({ f: 104, dmg: 110, spark: 'mega', fx: 'doublePalm', say: '67!!', sayColor: '#ffd166', last: true, hitstop: 18 });
       b.startLock(f, d, {
-        frames: 116, off: [64, 0], tpose: 'hurt', cine: true,
+        frames: 116, off: [76, 0], tpose: 'hurt', cine: true,
         anim: [[0, 'palmsUp'], [100, 'palmsUp'], [104, 'clap', 'snap'], [116, 'clap']], mods: [[0, 100, 'sixseven']],
         hits, end: { kb: [13, -11], knockdown: true, wallBounce: true }
       });
@@ -1330,8 +1372,9 @@ def('sigmaRule', {
 });
 MOVES.sigmaRule.on.grab = (f, b, m, d) => {
   b.startLock(f, d, {
-    frames: 100, off: [62, 0], tpose: 'hurt', cine: true,
+    frames: 100, off: [76, 0], tpose: 'hurt', cine: true,
     anim: [[0, 'dap'], [16, 'punchFwd2', 'snap'], [32, 'roundhouse', 'snap'], [48, 'uppercut', 'snap'], [64, 'backhand', 'snap'], [80, 'armsCrossed'], [100, 'armsCrossed']],
+    hands: (a, t, fr) => { const c = faceHit(a, t, 'f', 15, 22, fr, 'chest'); if (c) return { f: c }; const u = faceHit(a, t, 'n', 47, 54, fr, 'face'); return u ? { n: u } : null; },
     hits: [{ f: 16, dmg: 40, spark: 'heavy' }, { f: 32, dmg: 45, spark: 'heavy' }, { f: 48, dmg: 50, spark: 'heavy' }, { f: 64, dmg: 55, spark: 'heavy' }, { f: 90, dmg: 80, spark: 'mega', fx: 'sigmaFinish', say: 'SIGMA', sayColor: '#c084fc', last: true, hitstop: 18 }],
     end: { kb: [12, -8], knockdown: true }
   });
@@ -1366,6 +1409,16 @@ def('auraOverload', {
 // =====================================================================
 // metadatos derivados
 // =====================================================================
+// Contactos automáticos: los movimientos de bofetada/palmada llevan la mano a la cara (o al pecho) al conectar.
+for (const m of Object.values(MOVES)) {
+  if (m.contacts || !m.anim) continue;
+  const end = m.startup + m.active + 3;
+  const has = n => m.anim.some(k => k[1] === n);
+  if (has('slap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
+  else if (has('dap') || has('bonk')) m.contacts = [{ hand: 'n', at: has('bonk') ? 'top' : 'chest', from: m.startup, to: end, onHit: true }];
+  else if (has('clap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
+}
+
 export const BASIC_IDS = Object.values(MOVES).filter(m => m.slot === 'basic').map(m => m.id);
 export const SPECIAL_IDS = Object.values(MOVES).filter(m => m.slot === 'special').map(m => m.id);
 export const ULT_IDS = Object.values(MOVES).filter(m => m.slot === 'ult').map(m => m.id);
