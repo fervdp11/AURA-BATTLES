@@ -1,5 +1,5 @@
 // Vista del combate: dibuja luchadores, proyectiles y estados; traduce eventos de la simulación en
-// efectos, sonido, voz, reacciones del público y cámara dinámica.
+// efectos, sonido, reacciones del escenario y cámara dinámica.
 import { Arena } from './Arena.js';
 import { FX } from './FX.js';
 import { drawFighter, drawBody, hex, shade, hsl, heartShape, mix } from './StickRenderer.js';
@@ -8,8 +8,23 @@ import { MOVES } from '../sim/moves.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.js';
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
+import { drawShark, drawCrocPlane, drawTungTung, drawBallerina, drawRoots, drawLirili } from './Brainrot.js';
 
 const STRENGTH_SFX = { light: 'hitLight', medium: 'hitMed', heavy: 'hitHeavy', mega: 'hitMega' };
+// firma sonora (sin voces) de cada técnica al lanzarla
+const MOVE_SFX = {
+  sixSeven: ['tauntHorn'], sixSevenBarrage: ['tauntHorn', 'ultCast'], fakeHandshake: ['swish'], mewing: ['mewClick'], infiniteMewing: ['mewClick', 'sparkle'],
+  sigmaStare: ['sigmaHum'], sigmaTeleport: ['sigmaHum', 'teleport'], sigmaRule: ['sigmaHum'], rizz: ['kissPop', 'rizzChime'], rizzStorm: ['rizzChime'],
+  siuuu: ['whooshHeavy'], auraWalk: ['fingerSnap'], auraFarming: ['sparkle'], griddy: ['scratch'], flossShield: ['scratch'], skibidiSpin: ['scratch'],
+  unoReverse: ['card'], clapBack: ['swish'], tungTung: ['woodKnock'], bombardiro: ['planeEngine'], ballerinaSpin: ['musicBox'], timeStop: ['rewind'],
+  perfectlyBalanced: ['fingerSnap'], letHimCook: ['fire'], caughtIn4K: ['shutter'], rickroll: ['tauntHorn'], ggEz: ['tauntHorn'], lBozo: ['tauntHorn'],
+  broReallyThought: ['tauntHorn'], skillIssue: ['tauntHorn'], micDrop: ['swish'], dealWithIt: ['swish'], mainCharacter: ['sparkle'], ohioMode: ['glitch'],
+  lagSpike: ['glitch'], afk: ['heartbeat'], thisIsFine: ['fire'], stonks: ['coin'], bigBrain: ['energyFull'], narutoRun: ['dash'], speedrun: ['dash'],
+  snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
+  sigmaTurn: ['sigmaHum'], rizzLean: ['rizzChime'], menacingPose: ['sigmaHum'], tralalero: ['bubbles'], brrPatapim: ['woodKnock'], liriliLarila: ['tick'],
+  ballerinaCappuccina: ['musicBox', 'pirouette'], shoulderBrush: ['swish'], defaultDance: ['scratch'], headPalm: ['swish'], brainrotInvasion: ['ultCast', 'bubbles'], mainCharacterEnding: ['sigmaHum'],
+  domainExpansion: ['domain'], finalAuraJudgment: ['ultCast'], ultimateNonchalance: ['sigmaHum'], coffinDance: ['tauntHorn'], auraOverload: ['ultCast']
+};
 const SHAKE = { light: [0, 0], medium: [70, 0.0025], heavy: [130, 0.005], mega: [240, 0.01] };
 const _ghostPose = makePose(POSES.dash);
 const _ghostJ = {};
@@ -18,8 +33,9 @@ export class BattleView {
   constructor(scene, battle, opts = {}) {
     this.scene = scene; this.b = battle; this.opts = opts;
     this.shakeMul = opts.shake ?? 1;
-    this.arena = new Arena(scene, opts.arena || 'rooftop');
+    this.arena = new Arena(scene, opts.arena || 'rooftop', { quality: opts.quality });
     const add = scene.add;
+    this.gRefl = add.graphics().setDepth(-50).setAlpha(this.arena.reflect);
     this.gShadow = add.graphics().setDepth(-5);
     this.gBack = add.graphics().setDepth(5);
     this.gGlow = add.graphics().setDepth(8).setBlendMode('ADD');
@@ -43,7 +59,7 @@ export class BattleView {
     this.vignette = null;
     this.bloom = null;
     if (opts.quality !== 'baja' && this.cam.postFX) {
-      try { this.bloom = this.cam.postFX.addBloom(0xffffff, 1, 1, 0.8, 0.55, 2); } catch (e) { this.bloom = null; }
+      // sin bloom de cámara: sin umbral lava los colores; el brillo lo aportan las capas aditivas propias
       try { this.vignette = this.cam.postFX.addVignette(0.5, 0.5, 0.92, 0.35); } catch (e) { this.vignette = null; }
     }
     for (const f of battle.fighters) this.lookFor(f);
@@ -52,7 +68,8 @@ export class BattleView {
   }
 
   sfx(n, o) { if (!this.opts.silent) Audio.play(n, o); }
-  say(t, o) { if (!this.opts.silent) Audio.speak(t, o); }
+  // sonido posicionado en estéreo según la x de mundo
+  sfxAt(n, x, o = {}) { if (this.opts.silent) return; const half = 640 / (this.cs.zoom || 1); Audio.play(n, { ...o, pan: (x - this.cs.x) / half }); }
   duck(a, b) { if (!this.opts.silent) Audio.duck(a, b); }
 
   lookFor(f) {
@@ -86,7 +103,7 @@ export class BattleView {
   // ------------------------------------------------------------
   drawFighters() {
     const b = this.b, gb = this.gBody, gg = this.gGlow, go = this.gOver, ga = this.gOverAdd, gs = this.gShadow, gk = this.gBack;
-    gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear();
+    gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear(); this.gRefl.clear();
     const list = [...b.fighters].sort((a, c) => (a.alive ? 1 : 0) - (c.alive ? 1 : 0) || (a.state === 'attack' ? 1 : 0) - (c.state === 'attack' ? 1 : 0));
     const multi = b.fighters.filter(f => !f.decoyOf).length > 2;
     for (const f of list) {
@@ -94,8 +111,19 @@ export class BattleView {
       if (f.decoyOf) Object.assign(look, this.lookFor(f.decoyOf));
       // sombra
       const hAbove = Math.max(0, GROUND_Y - f.y);
-      if (f.visible) { gs.fillStyle(0x000000, 0.35 * Math.max(0.2, 1 - hAbove / 400)); gs.fillEllipse(f.x, GROUND_Y + 4, 70 * f.scale * Math.max(0.4, 1 - hAbove / 500), 14 * f.scale); }
+      if (f.visible) {
+        // sombra suave en capas + sombras de contacto bajo cada pie apoyado
+        const k = Math.max(0.2, 1 - hAbove / 400), wsh = 74 * f.scale * Math.max(0.4, 1 - hAbove / 500);
+        for (let i = 0; i < 3; i++) { gs.fillStyle(0x000000, 0.12 * k); gs.fillEllipse(f.x, GROUND_Y + 4, wsh * (1.3 - i * 0.2), 16 * f.scale * (1.2 - i * 0.15)); }
+        const j = f.joints;
+        for (const fx2 of [j.nFootX, j.fFootX]) { const fy = j[fx2 === j.nFootX ? 'nFootY' : 'fFootY'], c = Math.max(0, 1 - (GROUND_Y - fy) / 40); if (c > 0) { gs.fillStyle(0x000000, 0.3 * c); gs.fillEllipse(fx2, GROUND_Y + 2, 22 * f.scale, 6 * f.scale); } }
+      }
       if (!f.visible) continue;
+      // reflejo en suelos brillantes
+      if (this.arena.reflect > 0 && f.alive !== undefined) {
+        const rj = mirrorJoints(f.joints, _reflJ);
+        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t });
+      }
       // KO en 1vN: desvanecer
       let alpha = f.alpha ?? 1;
       if (!f.alive && !b.lastKO?.final && b.lastKO?.f !== f && f.grounded) { f.koFade = (f.koFade || 0) + 1; alpha *= Math.max(0, 1 - Math.max(0, f.koFade - 60) / 40); if (alpha <= 0) continue; }
@@ -207,10 +235,21 @@ export class BattleView {
     if (box && f.move && f.move.def.hit && f.move.def.hit.box && f.move.def.hit.box.joint) {
       const jn = f.move.def.hit.box.joint;
       tr.push({ x: f.joints[jn + 'X'], y: f.joints[jn + 'Y'], a: 1 });
-    }
+    } else if (f.state === 'attack' && f.move) {
+      // smear: sigue la extremidad que más rápido se mueve durante el golpe
+      const prev = f._ext || (f._ext = {});
+      let best = null, bv = 9 * f.scale, bj = null;
+      for (const jn of ['nHand', 'fHand', 'nFoot', 'fFoot']) {
+        const x = f.joints[jn + 'X'], y = f.joints[jn + 'Y'];
+        if (prev[jn]) { const v = Math.hypot(x - prev[jn][0], y - prev[jn][1]) - Math.abs(f.vx); if (v > bv) { bv = v; best = [x, y]; bj = jn; } }
+        prev[jn] = [x, y];
+      }
+      if (best) tr.push({ x: best[0], y: best[1], a: 0.8, jn: bj });
+    } else if (f._ext) f._ext = null;
     const g = this.gGlow;
     for (let i = 1; i < tr.length; i++) {
       const a = tr[i - 1], c = tr[i];
+      if (a.jn !== c.jn) continue;
       g.lineStyle(10 * f.scale * c.a, look.aura, 0.55 * c.a); g.lineBetween(a.x, a.y, c.x, c.y);
       g.lineStyle(4 * f.scale * c.a, 0xffffff, 0.8 * c.a); g.lineBetween(a.x, a.y, c.x, c.y);
     }
@@ -286,8 +325,8 @@ export class BattleView {
         case 'brokenHeart': heartShape(g, x, y, 14, 0x9b1b30, 1); g.lineStyle(3, 0x1a0005, 1); g.beginPath(); g.moveTo(x, y - 10); g.lineTo(x - 4, y - 2); g.lineTo(x + 3, y + 3); g.lineTo(x - 1, y + 12); g.strokePath(); break;
         case 'invisible': ga.lineStyle(2, 0xffffff, 0.12 + Math.sin(t * 0.8) * 0.06); ga.strokeCircle(x, y, 14 + Math.sin(t * 0.5) * 3); ga.strokeCircle(x - d * 14, y, 9); break;
         case 'ghost': {
-          copyPose(POSES.dash, _ghostPose); MODS.walkLegs(_ghostPose, p.age * 1.5);
-          _ghostPose.na[0] = 86; _ghostPose.na[1] = 94;
+          copyPose(POSES.dash, _ghostPose); MODS.airRun(_ghostPose, p.age * 1.5);
+          _ghostPose.hn[0] = 50; _ghostPose.hn[1] = -6; _ghostPose.hf[0] = 44; _ghostPose.hf[1] = 2;
           computeJoints(_ghostPose, x, y + 70, d, p.owner.scale, false, _ghostJ);
           drawBody(ga, null, _ghostJ, _ghostPose, p.owner.scale, look, 0.6, { ghost: true, ghostColor: 0xb9a7ff });
           break;
@@ -306,6 +345,8 @@ export class BattleView {
         case 'notes': ga.lineStyle(5, 0xff66ff, 0.5); ga.strokeEllipse(x, y, p.w, 160); if (Math.random() < 0.6) this.fx.emit('note', x + (Math.random() - 0.5) * p.w, y - 40, 1, 0xff66ff); break;
         case 'icecream': g.fillStyle(0xd4a373, 1); g.fillTriangle(x - 9, y - 4, x + 9, y - 4, x, y + 18); g.fillStyle(0xffd6e0, 1); g.fillCircle(x, y - 9, 10); g.fillStyle(0xaee8ff, 1); g.fillCircle(x + 4, y - 15, 6); break;
         case 'banana': g.lineStyle(9, 0x7a5c00, 1); g.beginPath(); g.arc(x, y - 8, 16, 0.3, 2.8); g.strokePath(); g.lineStyle(6, 0xffe135, 1); g.beginPath(); g.arc(x, y - 8, 16, 0.3, 2.8); g.strokePath(); break;
+        case 'shark': drawShark(g, x, y, d, p.owner.scale * (p.scale || 1), t + p.id); if (Math.random() < 0.4) this.fx.dust(x - d * 40, GROUND_Y, 1, 0x9fd3ff, -d, 0.6); break;
+        case 'roots': drawRoots(g, x, GROUND_Y + 2, p.owner.scale, Math.min(1, p.age / 4), t); break;
         case 'bomb': g.fillStyle(0x222222, 1); g.fillCircle(x, y, 14); g.fillStyle(0x6b8e23, 1); g.fillRect(x - 4, y - 22, 8, 8); ga.fillStyle(0xffaa00, 0.8); ga.fillCircle(x, y - 24 + Math.sin(t) * 2, 4); break;
         case 'glasses': g.fillStyle(0x000000, 1); for (let i = 0; i < 6; i++) g.fillRect(x - 30 + i * 10, y - 6, 9, 9); g.fillRect(x - 30, y - 9, 60, 4); g.fillStyle(0xffffff, 1); g.fillRect(x - 26, y - 4, 4, 4); g.fillRect(x + 6, y - 4, 4, 4); break;
         case 'grass': for (let i = -6; i <= 6; i++) { g.fillStyle(i % 2 ? 0x2f9e44 : 0x51cf66, 1); g.fillTriangle(x + i * 10 - 6, GROUND_Y, x + i * 10 + 6, GROUND_Y, x + i * 10, GROUND_Y - 30 - Math.abs(Math.sin(i * 1.7)) * 40); } break;
@@ -326,6 +367,7 @@ export class BattleView {
     const k = Math.sin(this.t * 0.5) * 0.5 + 0.5;
     if (p.kind === 'pillar') { ga.fillStyle(0xfff6a0, 0.08 + k * 0.08); ga.fillRect(p.x - p.w / 2, -1200, p.w, 1800 + 600); ga.lineStyle(3, 0xfff6a0, 0.6); ga.strokeEllipse(p.x, GROUND_Y, p.w * 1.4, 26); }
     else if (p.kind === 'grass') { g.fillStyle(0x2f9e44, 0.6); for (let i = -4; i <= 4; i++) g.fillTriangle(p.x + i * 12 - 4, GROUND_Y, p.x + i * 12 + 4, GROUND_Y, p.x + i * 12, GROUND_Y - 6 - k * 6); }
+    else if (p.kind === 'roots') { g.fillStyle(0x3a2410, 0.5); g.fillEllipse(p.x, GROUND_Y + 2, 120, 18); g.lineStyle(2, 0x6b8e23, 0.5 + k * 0.5); g.strokeEllipse(p.x, GROUND_Y + 2, 130, 22); drawRoots(g, p.x, GROUND_Y + 2, p.owner.scale, 0.12 + k * 0.08, this.t); }
     else if (p.kind === 'glasses' || p.kind === 'bighand' || p.kind === 'lightning' || p.kind === 'none') { g.fillStyle(0x000000, 0.4); g.fillEllipse(p.x, GROUND_Y, 100, 18); g.lineStyle(2, look.aura, 0.5 + k * 0.5); g.strokeEllipse(p.x, GROUND_Y, 110, 22); }
     else { g.lineStyle(2, look.aura, 0.4 + k * 0.4); g.strokeEllipse(p.x, GROUND_Y, 100, 18); }
   }
@@ -392,7 +434,9 @@ export class BattleView {
         fx.flash(e.x, e.y, col, e.strength === 'mega' ? 2.4 : e.strength === 'heavy' ? 1.5 : 0.9);
         if (e.strength !== 'light') fx.ring(e.x, e.y, col, e.strength === 'mega' ? 2.2 : e.strength === 'heavy' ? 1.3 : 0.8);
         if (e.counterHit) fx.ring(e.x, e.y, 0xff3030, 1.6);
-        this.sfx(STRENGTH_SFX[e.strength] || 'hitLight', { pitch: 0.92 + Math.random() * 0.16, minGap: 0.02 });
+        if (e.strength !== 'light') fx.starburst(e.x, e.y, col, e.strength === 'mega' ? 2 : e.strength === 'heavy' ? 1.4 : 0.9, dir);
+        if (e.strength === 'mega' || (e.strength === 'heavy' && e.counterHit)) this.impactFrame();
+        this.sfxAt(STRENGTH_SFX[e.strength] || 'hitLight', e.x, { pitch: 0.92 + Math.random() * 0.16, minGap: 0.02 });
         this.shake(e.strength);
         if (e.strength === 'heavy' || e.strength === 'mega') { this.cs.punch += e.strength === 'mega' ? 0.08 : 0.035; this.arena.react('ooh', 0.4); }
         if (this.opts.damageNumbers !== false && e.dmg >= 1) fx.number(e.x, e.y - 20, e.dmg, e.counterHit ? '#ff5050' : '#ffffff', e.dmg > 80);
@@ -403,7 +447,7 @@ export class BattleView {
       case 'block':
         fx.sparks(e.x, e.y, 8, 0x7fd1ff, 7, e.f.facing > 0 ? 0 : Math.PI, 2);
         fx.custom(10, (gt, gn, k) => { gt.lineStyle(5 * k, 0x7fd1ff, k); gt.beginPath(); gt.arc(e.f.x, e.f.y - 100 * e.f.scale, 50 * e.f.scale, e.f.facing > 0 ? -1 : Math.PI - 1, e.f.facing > 0 ? 1 : Math.PI + 1); gt.strokePath(); });
-        this.sfx('block', { pitch: 0.9 + Math.random() * 0.2 });
+        this.sfxAt('block', e.x, { pitch: 0.9 + Math.random() * 0.2 });
         break;
       case 'parry':
         fx.ring(e.x, e.y, 0xffd34d, 2.4, 420); fx.flash(e.x, e.y, 0xffffff, 2.6);
@@ -425,7 +469,7 @@ export class BattleView {
         this.focus(f.x + f.facing * 40, f.y - 120 * f.scale, 1.55, 40, 0.25);
         this.dimTarget = 0.7;
         S.time.delayedCall(700, () => { this.dimTarget = 0; });
-        this.sfx('announce'); this.sfx('charge', { dur: 0.6 }); this.duck(1.2, 0.25);
+        this.sfx('ultCast'); this.sfx('charge', { dur: 0.6 }); this.duck(1.2, 0.25);
         fx.ring(f.x, f.y - 100, this.lookFor(f).aura, 3, 600);
         fx.flash(f.x, f.y - 100, this.lookFor(f).aura, 3, 500);
         this.scene.events.emit('ultBanner', { f, def: e.def });
@@ -451,7 +495,7 @@ export class BattleView {
         fx.text(f.x, f.y - 250 * f.scale, e.text, { color: e.color || '#ff66cc', size: 40, hold: 900 });
         fx.number(f.x, f.y - 150, e.amount, '#ff66cc', true);
         fx.emit('star', f.x, f.y - 120, 10, hex(e.color || '#ff66cc'));
-        this.sfx('crowdLaugh'); this.sfx('crowdOoh');
+        this.sfx('tauntHorn'); this.sfx('sparkle');
         this.arena.react('cheer', 0.8);
         this.cs.punch += 0.04;
         this.shake('medium');
@@ -497,13 +541,14 @@ export class BattleView {
         this.sfx('teleport');
         break;
       }
+      case 'step': if (Math.abs(e.f.vx) > 3) fx.dust(e.x, GROUND_Y, 2, 0xcfc6b8, -Math.sign(e.f.vx) * e.f.facing, 0.5); this.sfxAt('step', e.x, { gain: Math.min(1, 0.4 + Math.abs(e.f.vx) * 0.08), minGap: 0.05 }); break;
       case 'jump': fx.dust(e.f.x, GROUND_Y, e.double ? 4 : 6); this.sfx('jump'); break;
       case 'land': fx.dust(e.f.x, GROUND_Y, e.heavy ? 14 : 8); this.sfx('land'); if (e.heavy) this.shake('medium'); break;
       case 'dash': fx.dust(e.f.x, GROUND_Y, 6, 0xcfc6b8, -e.f.facing * e.dir); this.sfx('dash'); break;
       case 'bossLand': {
         const f = e.f;
         fx.groundWave(f.x, GROUND_Y - 4, this.lookFor(f).aura, 500); fx.dust(f.x, GROUND_Y, 30); fx.ring(f.x, f.y - 60, this.lookFor(f).aura, 3);
-        this.sfx('vineBoom'); this.sfx('explosion'); this.shake('mega'); this.arena.react('ooh', 2); this.sfx('crowdOoh');
+        this.sfx('vineBoom'); this.sfx('explosion'); this.shake('mega'); this.arena.react('ooh', 2);
         fx.text(f.x, f.y - 280, f.name.toUpperCase(), { color: '#ff4d6d', size: 44, hold: 900 });
         break;
       }
@@ -522,10 +567,10 @@ export class BattleView {
       case 'grab': this.sfx('slap', { pitch: 0.6 }); break;
       case 'decoy': fx.emit('glow', e.f.x, e.f.y - 90, 18, 0xff77cc); this.sfx('teleport'); break;
       case 'decoyPop': fx.emit('heart', e.f.x, e.f.y - 90, 14, 0xff77cc); fx.ring(e.f.x, e.f.y - 90, 0xff77cc, 1.6); this.sfx('pop'); break;
-      case 'crowd': this.arena.react(e.mood === 'throw' ? 'cheer' : e.mood, 1); this.sfx(e.mood === 'throw' ? 'crowdOoh' : 'crowdCheer', { level: 0.3 }); break;
+      case 'crowd': this.arena.react(e.mood === 'throw' ? 'cheer' : e.mood, 1); break;
       case 'charge': if (Math.random() < 0.5) this.fx.motes(e.f.x, e.f.y - 100, this.lookFor(e.f).aura, 2, 60); break;
       case 'timeStop': {
-        this.sfx('timeStop'); this.say('za warudo', { pitch: 0.6, rate: 0.8, force: true });
+        this.sfx('timeStop');
         if (this.cam.postFX) { try { this.colorFx = this.cam.postFX.addColorMatrix(); this.colorFx.negative(); S.time.delayedCall(260, () => { if (this.colorFx) { this.colorFx.reset(); this.colorFx.grayscale(0.85); } }); } catch (err) { this.colorFx = null; } }
         fx.ring(e.f.x, e.f.y - 100, 0xffd700, 6, 900);
         break;
@@ -548,16 +593,28 @@ export class BattleView {
     }
   }
 
+  // fotograma de impacto: inversión de color durante 3 fotogramas (estilo anime)
+  impactFrame() {
+    if (this.opts.quality === 'baja' || !this.cam.postFX || this.colorFx || this._impact) return;
+    try {
+      const fxm = this.cam.postFX.addColorMatrix(); fxm.negative(); fxm.contrast(0.6, true);
+      this._impact = fxm;
+      this.scene.time.delayedCall(55, () => { try { this.cam.postFX.remove(fxm); } catch (err) { /* sin postFX */ } this._impact = null; });
+    } catch (err) { this._impact = null; }
+  }
+
   onMove(e) {
     const f = e.f, d = e.def;
     if (d.slot === 'basic') {
       this.sfx(d.weight === 'heavy' ? 'whooshHeavy' : 'whoosh', { pitch: 0.9 + Math.random() * 0.25 });
+      if (d.weight === 'heavy') this.scene.time.delayedCall(d.startup * 16, () => { if (f.state === 'attack' && f.move && f.move.def === d) this.fx.slash(f.x + f.facing * 40 * f.scale, f.y - 110 * f.scale, f.facing, this.lookFor(f).aura, 70 * f.scale); });
       return;
     }
     if (d.slot === 'hidden') { this.sfx('whoosh'); return; }
     this.sfx('whoosh', { pitch: 1.2 });
     if (d.slot !== 'ult') this.fx.text(f.x, f.y - 215 * f.scale, d.name.toUpperCase(), { color: d.color || '#ffffff', size: 26, hold: 420, rise: 30 });
-    if (d.voice) this.say(d.voice, { pitch: f.isHuman ? 1.05 : 0.8 + (f.id % 5) * 0.1, rate: d.id === 'sixSeven' ? 1.5 : 1.1 });
+    const sig = MOVE_SFX[d.id] || [d.slot === 'ult' ? 'ultCast' : 'cast'];
+    for (const n of sig) this.sfxAt(n, f.x);
     if (d.id === 'sixSeven' || d.id === 'sixSevenBarrage') this.sfx('count');
   }
 
@@ -566,6 +623,12 @@ export class BattleView {
     switch (e.fx) {
       case 'slap': fx.text(e.x, e.y - 30, '¡ZAS!', { color: '#ffffff', size: 48 }); this.sfx('slap'); this.shake('heavy'); fx.emit('star', e.x, e.y, 10, 0xffffff); break;
       case 'bonk': fx.text(e.x, e.y - 50, 'BONK', { color: '#d6a46b', size: 40 }); this.sfx('bonk'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 8, 0xffe066); break;
+      case 'flick': fx.text(e.x, e.y - 60, 'TOC', { color: '#8be9fd', size: 34 }); this.sfx('fingerSnap'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
+      case 'headbutt': fx.text(e.x, e.y - 60, '¡CRACK!', { color: '#c084fc', size: 44 }); this.sfx('woodKnock', { pitch: 0.6 }); this.shake('heavy'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 12, 0xffffff); break;
+      case 'chomp': fx.text(e.x, e.y - 60, 'ÑAM', { color: '#4cc9f0', size: 44 }); this.sfx('chomp'); this.sfx('bubbles'); this.shake('heavy'); break;
+      case 'coffee': fx.emit('smoke', e.x, e.y - 20, 8, 0xf5deb3); this.sfx('pirouette'); break;
+      case 'boom': fx.flash(e.x, e.y, 0xff7b00, 2.2); fx.emit('smoke', e.x, e.y, 10, 0x444444); fx.sparks(e.x, e.y, 18, 0xffaa00, 11); this.sfx('explosion'); this.shake('heavy'); break;
+      case 'tung': fx.text(e.x, e.y - 60, 'TUNG', { color: '#c68642', size: 40, angle: (Math.random() - 0.5) * 20 }); this.sfx('woodKnock'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
       case 'pan': fx.text(e.x, e.y - 50, 'CLANG', { color: '#cccccc', size: 40 }); this.sfx('bonk', { pitch: 0.6 }); break;
       case 'vineBoom': this.sfx('vineBoom'); this.scene.events.emit('flash', 0xffffff, 120); this.shake('mega'); break;
       case 'fireFist': fx.emit('glow', e.x, e.y, 30, 0xff7b00); fx.ring(e.x, e.y, 0xff7b00, 2.5); this.sfx('explosion'); fx.text(e.x, e.y - 60, 'FALCON PUNCH!', { color: '#ff7b00', size: 46 }); break;
@@ -585,6 +648,33 @@ export class BattleView {
     const look = f ? this.lookFor(f) : null;
     switch (e.name) {
       case 'sixseven': fx.motes(e.alt ? f.joints.fHandX : f.joints.nHandX, e.alt ? f.joints.fHandY : f.joints.nHandY, 0xffd166, 2, 10); break;
+      case 'snapBeat': {
+        const hx = e.i % 2 ? f.joints.nHandX : f.joints.fHandX, hy = e.i % 2 ? f.joints.nHandY : f.joints.fHandY;
+        fx.ring(hx, hy, 0xb388ff, 0.9 + e.i * 0.08, 260); fx.motes(f.x, f.y - 60, look.aura, 4, 50);
+        fx.text(hx, hy - 30, '✦', { color: '#d9c2ff', size: 24, hold: 120, rise: 30 });
+        this.sfxAt('fingerSnap', f.x, { pitch: 1 + (e.i % 4) * 0.06 }); break;
+      }
+      case 'sixsevenSlam':
+        fx.groundWave(f.x, GROUND_Y - 4, 0xffd166, 520); fx.dust(f.x, GROUND_Y, 16); this.shake('heavy'); this.sfx('stomp');
+        fx.text(f.x - 60, f.y - 160, '6', { color: '#ffd166', size: 64 }); fx.text(f.x + 60, f.y - 160, '7', { color: '#ffd166', size: 64 }); break;
+      case 'rizzWink': fx.emit('heart', f.joints.headX + f.facing * 20, f.joints.headY, 8, 0xff5fa2); fx.text(f.joints.headX + f.facing * 30, f.joints.headY - 40, '😉', { size: 34, hold: 300 }); this.sfx('kissPop'); break;
+      case 'menace': for (let i = 0; i < 2; i++) fx.text(f.x + (Math.random() - 0.5) * 220, f.y - 120 - Math.random() * 140, 'ゴ', { color: '#9b5de5', size: 30 + Math.random() * 26, hold: 260, rise: 40, angle: (Math.random() - 0.5) * 30 }); if (Math.random() < 0.5) this.sfx('heartbeat', { gain: 0.5 }); break;
+      case 'tralalero': fx.emit('glow', f.x + f.facing * 50, GROUND_Y - 40, 14, 0x4cc9f0); fx.text(f.x, f.y - 210, 'TRALALERO TRALALA', { color: '#4cc9f0', size: e.big ? 40 : 30 }); this.sfx('bubbles'); break;
+      case 'patapim': fx.text(f.x, f.y - 210, 'BRR BRR PATAPIM', { color: '#a7c957', size: 30 }); fx.dust(f.x, GROUND_Y, 8, 0x6b4423); this.sfx('woodKnock', { pitch: 0.5 }); break;
+      case 'lirili':
+        fx.ring(f.x, f.y - 90, 0xa7c957, 5, 600); this.sfx('tick'); this.sfx('rewind');
+        fx.custom(70, (gt, gn, k, el) => drawLirili(gn, f.x - f.facing * 90, GROUND_Y, f.scale * 0.9, el));
+        fx.text(f.x, f.y - 230, 'LIRILÌ LARILÀ', { color: '#a7c957', size: 30 }); break;
+      case 'brushOff': fx.dust(f.joints.shX, f.joints.shY, 6, 0xdddddd, -f.facing, 0.5); fx.emit('star', f.joints.shX, f.joints.shY, 4, 0xffffff); break;
+      case 'notes': fx.emit('note', f.x, f.y - 160, 2, [0x50fa7b, 0xff66ff, 0xffd166][Math.floor(Math.random() * 3)]); break;
+      case 'whiff': fx.text(f.joints.nHandX, f.joints.nHandY - 20, 'FIU', { color: '#cccccc', size: 20, hold: 120, rise: 20 }); this.sfx('whoosh', { pitch: 1.3, gain: 0.6 }); break;
+      case 'credits': {
+        const a = f;
+        fx.custom(110, (gt, gn, k, el) => { gt.fillStyle(0xfff2a8, 0.12 * Math.min(1, el / 10)); gt.fillTriangle(a.x, -600, a.x - 120, GROUND_Y, a.x + 120, GROUND_Y); });
+        fx.text(a.x, a.y - 240, '★ PROTAGONISTA ★', { color: '#ffe066', size: 36, hold: 1400 });
+        break;
+      }
+      case 'brainrot': this.brainrotStep(e); break;
       case 'jawline': fx.custom(40, (gt, gn, k) => { gt.lineStyle(4, 0x9be7ff, k); const j = f.joints, d = f.facing; gt.lineBetween(j.headX - d * 8, j.headY + 8, j.headX + d * 5, j.headY + 15); gt.lineBetween(j.headX + d * 5, j.headY + 15, j.headX + d * 13, j.headY + 9); }); fx.emit('star', f.joints.headX + f.facing * 6, f.joints.headY + 12, e.big ? 10 : 5, 0x9be7ff); this.sfx('ice'); break;
       case 'stare': {
         const j = f.joints;
@@ -598,7 +688,7 @@ export class BattleView {
       case 'eyeBeam': { const j = f.joints; fx.beam(j.headX + f.facing * 8, j.headY - 2, j.headX + f.facing * e.len, j.headY - 2, 0xffe066, 14, 20); this.sfx('beam'); this.shake('medium'); break; }
       case 'sideEye': fx.text(e.d.x, e.d.y - 210, '👀', { size: 40, hold: 400 }); this.sfx('shutter'); fx.beam(f.joints.headX, f.joints.headY, e.d.joints.headX, e.d.joints.headY, 0xffe066, 3, 14); break;
       case 'auraFlare': fx.ring(f.x, f.y - 90, e.color, e.big ? 3 : 2, 500); fx.emit('glow', f.x, f.y - 90, e.big ? 40 : 20, e.color); this.sfx('burst'); if (e.big) { this.shake('heavy'); this.scene.events.emit('flash', e.color, 200); } break;
-      case 'siuLand': fx.groundWave(f.x, GROUND_Y - 4, 0xff4d6d, 340); fx.dust(f.x, GROUND_Y, 20); fx.flash(f.x, f.y - 80, 0xffffff, 2); this.shake('heavy'); this.sfx('vineBoom'); this.arena.react('cheer', 1.2); this.sfx('crowdCheer', { level: 0.35 }); break;
+      case 'siuLand': fx.groundWave(f.x, GROUND_Y - 4, 0xff4d6d, 340); fx.dust(f.x, GROUND_Y, 20); fx.flash(f.x, f.y - 80, 0xffffff, 2); this.shake('heavy'); this.sfx('vineBoom'); this.arena.react('cheer', 1.2); break;
       case 'shadow': if (Math.floor(this.t) % 2 === 0) fx.marker(e.x, GROUND_Y, e.lock ? 0xff3333 : 0xffaa00, 3, 'shadow'); break;
       case 'heroLand': fx.groundWave(f.x, GROUND_Y - 4, look.aura, 300); fx.dust(f.x, GROUND_Y, 26); fx.ring(f.x, f.y - 40, look.aura, 2.4); this.shake('mega'); this.sfx('explosion'); break;
       case 'uno': fx.ring(f.x, f.y - 110, 0xff3b3b, 2); this.sfx('card'); fx.text(f.x, f.y - 160, '🔄', { size: 40, hold: 300 }); break;
@@ -606,7 +696,7 @@ export class BattleView {
       case 'theft': fx.custom(24, (gt, gn, k) => { for (let i = 0; i < 6; i++) { const t2 = ((1 - k) + i / 6) % 1; const x = e.f.x + (e.a.x - e.f.x) * t2, y = e.f.y - 100 - Math.sin(t2 * Math.PI) * 60; gt.fillStyle(e.energy ? 0x4cc9f0 : 0xffd700, k); gt.fillCircle(x, y, 6); } }); this.sfx('coin'); break;
       case 'emote': fx.emit('star', f.x, f.y - 120, 8, 0xffffff); this.sfx('pop'); break;
       case 'ohio': fx.emit('glow', f.x, f.y - 100, 20, 0x7cfc00); this.sfx('glitch'); break;
-      case 'spotlight': fx.custom(60, (gt, gn, k) => { gt.fillStyle(0xfff2a8, 0.25 * k); gt.fillTriangle(f.x, -600, f.x - 110, GROUND_Y, f.x + 110, GROUND_Y); }); this.sfx('crowdCheer', { level: 0.35 }); break;
+      case 'spotlight': fx.custom(60, (gt, gn, k) => { gt.fillStyle(0xfff2a8, 0.25 * k); gt.fillTriangle(f.x, -600, f.x - 110, GROUND_Y, f.x + 110, GROUND_Y); }); this.sfx('sparkle'); break;
       case 'flash4k': fx.flash(f.joints.nHandX, f.joints.nHandY, 0xffffff, 3, 300); this.sfx('shutter'); fx.custom(10, (gt, gn, k) => { gt.fillStyle(0xffffff, 0.35 * k); gt.fillTriangle(f.joints.nHandX, f.joints.nHandY, f.x + f.facing * 320, f.y - 260, f.x + f.facing * 320, f.y); }); break;
       case 'cook': fx.emit('smoke', f.joints.nHandX, f.joints.nHandY, 10, 0xffffff); this.sfx('fire'); break;
       case 'mog': fx.ring(f.x, f.y - 120, 0x555577, 3, 500); this.sfx('whooshHeavy', { pitch: 0.5 }); break;
@@ -643,12 +733,27 @@ export class BattleView {
             gn.fillStyle(0xffffff, 1); gn.fillRect(px - 9, py - 128 + bob, 18, 4);
           }
         });
-        this.say('astronomia', { force: true });
+        this.sfx('tauntHorn');
         break;
       }
       case 'clap': fx.ring(f.joints.nHandX, f.joints.nHandY, 0xffd166, 2); this.sfx('slap', { pitch: 1.3 }); break;
       case 'stopSign': fx.text(f.x + f.facing * 60, f.y - 140, '✋', { size: 40, hold: 200 }); this.sfx('block', { pitch: 0.8 }); break;
       case 'zzz': fx.text(f.joints.headX + 20, f.joints.headY - 20, 'Z', { size: 22, color: '#8888ff', hold: 300 }); break;
+    }
+  }
+
+  // secuencia cinemática de la Invasión Brainrot
+  brainrotStep(e) {
+    const fx = this.fx, v = e.f, a = e.a, d = Math.sign(v.x - a.x) || 1;
+    switch (e.step) {
+      case 'shark': fx.custom(22, (gt, gn, k, el) => { const p = Math.min(1, el / 8); drawShark(gn, a.x + (v.x - a.x) * p, GROUND_Y - 60 - Math.sin(p * Math.PI) * 60, d, 1.4, el * 2); }); break;
+      case 'plane':
+        this.sfx('planeEngine', { dur: 1.2 });
+        fx.custom(44, (gt, gn, k, el) => { const x = v.x - d * 700 + d * el * 32; drawCrocPlane(gn, x, v.y - 300, d, 1.3, el); });
+        for (const dt of [12, 20, 28]) this.scene.time.delayedCall(dt * 16, () => { this.sfx('bombWhistle'); fx.custom(10, (gt, gn, k2, el2) => { gn.fillStyle(0x222222, 1); gn.fillCircle(v.x + (Math.random() - 0.5) * 6, v.y - 280 + el2 * 24, 10); }); });
+        break;
+      case 'tung': fx.custom(36, (gt, gn, k, el) => drawTungTung(gn, v.x + d * 90, GROUND_Y, 1.3, el * 1.4, -d)); fx.text(v.x, v.y - 260, 'TUNG TUNG TUNG SAHUR', { color: '#c68642', size: 36 }); break;
+      case 'ballerina': this.sfx('musicBox'); fx.custom(30, (gt, gn, k, el) => drawBallerina(gn, v.x - d * 300 + d * el * 12, GROUND_Y, 1.4, el * 2)); fx.text(v.x, v.y - 260, 'BALLERINA CAPPUCCINA', { color: '#ffb6c1', size: 34 }); break;
     }
   }
 
@@ -663,7 +768,6 @@ export class BattleView {
     this.sfx('ko'); this.sfx('vineBoom');
     this.shake([500, 0.016]);
     this.arena.react('cheer', 2);
-    this.sfx('crowdCheer', { level: 0.5 });
     if (e.final) {
       this.focus(f.x, f.y - 120, 1.45, 110, 0.06);
       this.scene.events.emit('ko', e);
@@ -676,9 +780,7 @@ export class BattleView {
   celebrate(team) {
     for (const f of this.b.fighters) if (f.team === team && f.alive) {
       this.fx.emit('confetti', f.x, f.y - 200, 60, Math.random() * 0xffffff);
-      const c = f.profile.celebration;
-      const v = { siuuu: 'siuuuuuu', sixSeven: 'six seven', mewing: 'mewing streak', chill: 'just a chill guy', laugh: 'bro really thought', jojo: 'yare yare daze', auraFarming: 'aura farming', sigma: 'sigma' }[c];
-      if (v && f.isHuman) this.say(v, { force: true });
+      this.sfx('sparkle');
     }
     for (let i = 0; i < 3; i++) this.scene.time.delayedCall(400 * i, () => this.fx.emit('confetti', this.cs.x + (Math.random() - 0.5) * 800, this.cs.y - 300, 40));
   }
@@ -686,12 +788,20 @@ export class BattleView {
   destroy() {
     this.arena.destroy();
     this.fx.destroy();
-    for (const g of [this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
+    for (const g of [this.gRefl, this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
     if (this.cam.postFX) { try { this.cam.postFX.clear(); } catch (e) { /* nada */ } }
   }
 }
 
 const STATUS_COL = { chill: 0x7fd6a0, goblin: 0x66cc33, infMewing: 0x6fd8ff };
+
+const _reflJ = {};
+function mirrorJoints(j, o) {
+  for (const k in j) o[k] = j[k];
+  for (const k in j) if (k.endsWith('Y') && typeof j[k] === 'number') o[k] = 2 * GROUND_Y - j[k];
+  o.headAng = 180 - (j.headAng || 0); o.lean = 180 - (j.lean || 0);
+  return o;
+}
 
 function shiftAll(j, dx) {
   for (const k in j) if (k.endsWith('X') && typeof j[k] === 'number') j[k] += dx;

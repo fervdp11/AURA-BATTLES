@@ -19,7 +19,14 @@ export function botProfile(bot) {
 export function buildBattle(spec) {
   const d = Save.d;
   const fighters = [];
-  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0 });
+  // multijugador local: dos humanos, cada uno con su perfil de teclas
+  if (spec.mode === 'versus') {
+    fighters.push({ team: 0, profile: { ...spec.p1.profile, scale: 1 }, loadout: { ...spec.p1.loadout }, human: true, ctrlProfile: 'p1' });
+    fighters.push({ team: 1, profile: { ...spec.p2.profile, scale: 1 }, loadout: { ...spec.p2.loadout }, human: true, ctrlProfile: 'p2' });
+    return new Battle({ fighters, mode: 'versus', versus: true, timer: spec.timer ?? 99, roundsToWin: spec.rounds || 1, seed: (Math.random() * 1e9) | 0 });
+  }
+  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0,
+    controller: spec.aiPlayer ? new AIController({ level: spec.aiPlayer, style: 'balanced', seed: 99 }) : undefined });
   spec.enemies.forEach((bot, i) => {
     const level = spec.levelOverride ?? bot.level;
     const ctrl = spec.mode === 'training' ? new DummyController(spec.dummyMode || 'stand') : new AIController({ level, style: bot.style, seed: (Date.now() + i * 7919) & 0xffffff });
@@ -38,7 +45,7 @@ export function buildBattle(spec) {
 
 export function pickArena(spec) {
   if (spec.arena && spec.arena !== 'random') return spec.arena;
-  if (spec.enemies.some(e => e.boss)) return 'colosseum';
+  if ((spec.enemies || []).some(e => e.boss)) return 'colosseum';
   const list = ARENAS.filter(a => a.id !== 'colosseum');
   return list[Math.floor(Math.random() * list.length)].id;
 }

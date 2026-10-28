@@ -24,6 +24,46 @@ const say = (b, f, text, color = '#ffffff', small = false) => b.emit('callout', 
 const fx = (b, name, data) => b.emit('fx', { name, ...data });
 const total = d => d.startup + d.active + d.recovery;
 
+// ---- contactos de manos (el rig IK lleva la mano exactamente al punto) ----
+// Punto donde se encuentran las dos manos en un apretón: entre ambos hombros, con sacudida vertical.
+const shakePoint = (a, t, fr, shake) => {
+  const ja = a.joints, jt = t.joints;
+  const x = (ja.shX + jt.shX) / 2;
+  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? Math.sin(fr * 0.75) * 7 * a.scale : 0);
+  return { x, y };
+};
+const ramp = (fr, a, b) => Math.max(0, Math.min(1, (fr - a + 1) / 4, (b - fr + 1) / 4));
+// mano del atacante en la cara del agarrado
+const faceHit = (a, t, hand, from, to, fr, at = 'face') => {
+  const w = ramp(fr, from, to);
+  if (w <= 0) return null;
+  const p = contactPointOf(t, at, a.facing);
+  return p ? { x: p[0], y: p[1], w } : null;
+};
+function contactPointOf(t, at, facing) {
+  const j = t.joints, s = t.scale;
+  if (at === 'face') return [j.headX - facing * j.headR * 0.9, j.headY + j.headR * 0.2];
+  if (at === 'chest') return [j.neckX * 0.7 + j.hipX * 0.3 - facing * 11 * s, j.neckY * 0.7 + j.hipY * 0.3];
+  if (at === 'gut') return [j.neckX * 0.3 + j.hipX * 0.7 - facing * 11 * s, j.neckY * 0.3 + j.hipY * 0.7];
+  if (at === 'top') return [j.headX, j.headY - j.headR];
+  if (at === 'shoulder') return [j.shX - facing * 8 * s, j.shY];
+  return null;
+}
+// apretón de manos: ambos sacuden la mano cercana en el mismo punto hasta 'release'
+const handshake = (release, shakeTo, extra) => ({
+  hands: (a, t, fr) => {
+    const o = {};
+    if (fr <= release) { const p = shakePoint(a, t, fr, fr <= shakeTo); o.n = { x: p.x, y: p.y, w: Math.min(1, fr / 4) }; }
+    if (extra) { const e = extra(a, t, fr); if (e) Object.assign(o, e); }
+    return o;
+  },
+  thands: (a, t, fr) => {
+    if (fr > release) return null;
+    const p = shakePoint(a, t, fr, fr <= shakeTo);
+    return { n: { x: p.x, y: p.y, w: Math.min(1, fr / 4) } };
+  }
+});
+
 // =====================================================================
 // BÁSICOS
 // =====================================================================
@@ -102,7 +142,7 @@ def('dashAttack', {
 // =====================================================================
 
 def('sixSeven', {
-  name: 'Six Seven', cost: 15, cd: 30, startup: 7, active: 28, recovery: 14, voice: 'six seven', color: '#ffd166',
+  name: 'Six Seven', cost: 15, cd: 30, startup: 7, active: 28, recovery: 14, color: '#ffd166',
   anim: [[0, 'palmsUp'], [7, 'palmsUp'], [35, 'palmsUp'], [49, 'guard']], mods: [[0, 35, 'sixseven']],
   motion: [[7, 35, 1.2]],
   hit: H(10, { stun: 14, kb: [1.6, 0], every: 4, box: frontBox(10, -150, 78, 80), spark: 'light', chip: 0.2 }),
@@ -112,15 +152,16 @@ def('sixSeven', {
 });
 
 def('fakeHandshake', {
-  name: 'Fake Handshake', cost: 15, cd: 60, startup: 12, active: 6, recovery: 30, voice: 'nice to meet you', color: '#9be7ff',
+  name: 'Fake Handshake', cost: 15, cd: 60, startup: 12, active: 6, recovery: 30, color: '#9be7ff',
   anim: [[0, 'guard'], [10, 'offer', 'out'], [18, 'offer'], [48, 'guard']],
   hit: { dmg: 0, grab: true, box: frontBox(20, -150, 70, 120) },
   on: {
     grab(f, b, m, d) {
       b.startLock(f, d, {
-        frames: 70, off: [62, 0], tpose: t => t < 42 ? 'offer' : 'held',
-        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [70, 'slap']],
-        mods: [[0, 32, 'shake']],
+        frames: 60, off: [80, 0], tpose: t => t < 40 ? 'offer' : 'held',
+        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [52, 'slap'], [60, 'guard', 'inOut']],
+        // los dos se dan la mano de verdad; al soltarla, la misma mano vuelve con un tortazo a la mejilla
+        ...handshake(36, 30, (a, t, fr) => { const h = faceHit(a, t, 'n', 43, 52, fr); return h ? { n: h } : null; }),
         hits: [{ f: 44, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12 }],
         end: { kb: [10, -7], knockdown: true }
       });
@@ -133,7 +174,7 @@ def('fakeHandshake', {
 });
 
 def('mewing', {
-  name: 'Mewing', cost: 20, cd: 600, startup: 22, active: 1, recovery: 8, buffOnly: true, fragile: true, voice: 'mewing', color: '#9be7ff',
+  name: 'Mewing', cost: 20, cd: 600, startup: 22, active: 1, recovery: 8, buffOnly: true, fragile: true, color: '#9be7ff',
   anim: [[0, 'guard'], [8, 'mew'], [31, 'mew']],
   on: { active(f, b, m) { if (m.data.interrupted) return; f.addStatus('mewing', 360, {}, f); fx(b, 'jawline', { f }); say(b, f, 'MEWING ACTIVADO', '#9be7ff'); } },
   desc: 'Lengua al paladar, mandíbula marcada: defensa +35% y energía pasiva durante 6 s.', tip: 'Golpéalo durante la preparación para cancelarlo.',
@@ -141,7 +182,7 @@ def('mewing', {
 });
 
 def('sigmaStare', {
-  name: 'Sigma Stare', cost: 20, cd: 240, startup: 14, active: 30, recovery: 16, voice: 'sigma', color: '#c084fc',
+  name: 'Sigma Stare', cost: 20, cd: 240, startup: 14, active: 30, recovery: 16, color: '#c084fc',
   anim: [[0, 'armsCrossed'], [44, 'armsCrossed'], [60, 'guard']],
   on: {
     frame(f, b, m, t) {
@@ -162,7 +203,7 @@ def('sigmaStare', {
 });
 
 def('auraWalk', {
-  name: 'Aura Walk', cost: 25, cd: 900, startup: 18, active: 1, recovery: 4, buffOnly: true, voice: 'aura', color: '#ffd34d',
+  name: 'Aura Walk', cost: 25, cd: 900, startup: 18, active: 1, recovery: 4, buffOnly: true, color: '#ffd34d',
   anim: [[0, 'guard'], [6, 'strut'], [23, 'strut']], mods: [[0, 23, 'strutArms']],
   on: { active(f, b) { f.addStatus('auraWalk', 300, {}, f); fx(b, 'auraFlare', { f, color: 0xffd34d }); say(b, f, 'AURA WALK', '#ffd34d'); } },
   desc: 'Caminata imparable: velocidad, súper armadura contra golpes ligeros y regeneración de aura (5 s).', tip: 'Golpes fuertes, agarres y proyectiles potentes la atraviesan.',
@@ -170,7 +211,7 @@ def('auraWalk', {
 });
 
 def('siuuu', {
-  name: 'SIUUU', cost: 30, cd: 120, startup: 32, active: 8, recovery: 24, voice: 'siuuuuuu', color: '#ff4d6d', keepVel: true,
+  name: 'SIUUU', cost: 30, cd: 120, startup: 32, active: 8, recovery: 24, color: '#ff4d6d', keepVel: true,
   motion: [[0, 10, 5], [10, 11, 5, -17]], gravity: 1,
   anim: [[0, 'dash'], [10, 'siuSpin'], [30, 'siuSpin'], [32, 'siuLand', 'snap'], [64, 'siuLand']], mods: [[10, 31, 'spin']],
   on: {
@@ -191,7 +232,7 @@ def('siuuu', {
 });
 
 def('rizz', {
-  name: 'Rizz', cost: 15, cd: 90, startup: 14, active: 2, recovery: 18, voice: 'rizz', color: '#ff5fa2',
+  name: 'Rizz', cost: 15, cd: 90, startup: 14, active: 2, recovery: 18, color: '#ff5fa2',
   anim: [[0, 'guard'], [6, 'kiss'], [14, 'kissOut', 'snap'], [34, 'guard']],
   proj: { at: 14, kind: 'heart', speed: 7, oy: -132, w: 30, h: 26, life: 140, hit: H(25, { stun: 10, kb: [1, 0], status: { id: 'charmed', frames: 80 } }) },
   desc: 'Beso volador: el corazón enamora al rival, que camina hacia ti sin poder defenderse.', tip: 'Agáchate (pasa por encima), bloquéalo o reflejalo.',
@@ -199,7 +240,7 @@ def('rizz', {
 });
 
 def('sideEye', {
-  name: 'Side Eye', cost: 10, cd: 90, startup: 6, active: 10, recovery: 14, voice: 'side eye', color: '#ffe066',
+  name: 'Side Eye', cost: 10, cd: 90, startup: 6, active: 10, recovery: 14, color: '#ffe066',
   anim: [[0, 'sideEye'], [30, 'sideEye']],
   on: {
     frame(f, b, m, t) {
@@ -221,7 +262,7 @@ def('sideEye', {
 });
 
 def('npcMode', {
-  name: 'NPC Mode', cost: 20, cd: 600, startup: 10, active: 1, recovery: 4, buffOnly: true, voice: 'npc mode activated', color: '#aaaaaa',
+  name: 'NPC Mode', cost: 20, cd: 600, startup: 10, active: 1, recovery: 4, buffOnly: true, color: '#aaaaaa',
   anim: [[0, 'npc'], [15, 'npc']], mods: [[0, 15, 'robot']],
   on: { active(f, b) { f.addStatus('npc', 240, {}, f); f.addStatus('plotTwist', 240, {}, f); say(b, f, 'NPC MODE', '#cccccc'); } },
   desc: 'Te vuelves un NPC de fondo: los proyectiles te atraviesan, inmune a humillaciones y tu próximo golpe es un giro de guion (+40%).', tip: 'Los golpes cuerpo a cuerpo siguen funcionando.',
@@ -229,7 +270,7 @@ def('npcMode', {
 });
 
 def('unoReverse', {
-  name: 'Uno Reverse', cost: 20, cd: 180, startup: 4, active: 28, recovery: 20, voice: 'no u', color: '#ff3b3b',
+  name: 'Uno Reverse', cost: 20, cd: 180, startup: 4, active: 28, recovery: 20, color: '#ff3b3b',
   anim: [[0, 'card'], [52, 'card'], [52, 'guard']],
   counter: {
     from: 3, to: 32, types: ['strike', 'projectile'],
@@ -253,7 +294,7 @@ def('unoReverse', {
 });
 
 def('broReallyThought', {
-  name: 'Bro Really Thought', cost: 0, cd: 240, startup: 10, active: 40, recovery: 10, taunt: true, voice: 'bro really thought', color: '#ffcc00',
+  name: 'Bro Really Thought', cost: 0, cd: 240, startup: 10, active: 40, recovery: 10, taunt: true, color: '#ffcc00',
   anim: [[0, 'pointLaugh'], [60, 'pointLaugh']], mods: [[0, 60, 'laugh']],
   on: {
     active(f, b, m) {
@@ -269,7 +310,7 @@ def('broReallyThought', {
 });
 
 def('nahIdWin', {
-  name: "Nah I'd Win", cost: 30, cd: 60, once: true, startup: 20, active: 1, recovery: 10, buffOnly: true, voice: "nah, I'd win", color: '#ffcc33',
+  name: "Nah I'd Win", cost: 30, cd: 60, once: true, startup: 20, active: 1, recovery: 10, buffOnly: true, color: '#ffcc33',
   cond: f => f.auraPct < 0.4, condText: 'NECESITAS <40% AURA',
   anim: [[0, 'guard'], [10, 'nahWin'], [31, 'nahWin']],
   on: { active(f, b) { f.heal(120); f.addStatus('nahIdWin', 480, {}, f); fx(b, 'auraFlare', { f, color: 0xffcc33, big: true }); say(b, f, "NAH, I'D WIN", '#ffcc33'); } },
@@ -278,7 +319,7 @@ def('nahIdWin', {
 });
 
 def('chillGuy', {
-  name: 'Chill Guy', cost: 20, cd: 900, startup: 14, active: 1, recovery: 6, buffOnly: true, voice: 'just a chill guy', color: '#7fd6a0',
+  name: 'Chill Guy', cost: 20, cd: 900, startup: 14, active: 1, recovery: 6, buffOnly: true, color: '#7fd6a0',
   anim: [[0, 'guard'], [10, 'pockets'], [21, 'pockets']],
   on: { active(f, b) { f.addStatus('chill', 420, {}, f); say(b, f, 'JUST A CHILL GUY', '#7fd6a0'); fx(b, 'chill', { f }); } },
   desc: 'Manos en los bolsillos: regeneras aura mientras no te golpeen y eres inmune a miedo, rizz y tilt (7 s).', tip: 'Presión constante: la regeneración se corta al recibir golpes.',
@@ -286,7 +327,7 @@ def('chillGuy', {
 });
 
 def('noReaction', {
-  name: 'No Reaction', cost: 20, cd: 240, startup: 3, active: 48, recovery: 12, voice: '', color: '#dddddd',
+  name: 'No Reaction', cost: 20, cd: 240, startup: 3, active: 48, recovery: 12, color: '#dddddd',
   anim: [[0, 'blank'], [63, 'blank']],
   counter: {
     from: 3, to: 51, types: ['strike', 'projectile'],
@@ -306,7 +347,7 @@ def('noReaction', {
 });
 
 def('fakeHighFive', {
-  name: 'Fake High Five', cost: 15, cd: 150, startup: 8, active: 70, recovery: 14, voice: 'up top', color: '#ffd166',
+  name: 'Fake High Five', cost: 15, cd: 150, startup: 8, active: 70, recovery: 14, color: '#ffd166',
   anim: [[0, 'highFive'], [92, 'highFive']],
   counter: {
     from: 8, to: 78, types: ['strike', 'grab'],
@@ -338,7 +379,7 @@ def('tooSlow', {
 });
 
 def('invisibleDap', {
-  name: 'Invisible Dap', cost: 12, cd: 50, startup: 9, active: 2, recovery: 14, voice: '', color: '#e0e0ff',
+  name: 'Invisible Dap', cost: 12, cd: 50, startup: 9, active: 2, recovery: 14, color: '#e0e0ff',
   anim: [[0, 'dapW'], [9, 'dap', 'snap'], [25, 'guard']],
   proj: { at: 9, kind: 'invisible', speed: 11, oy: -118, w: 34, h: 36, life: 90, invisible: true, hit: H(45, { stun: 18, kb: [5, 0] }) },
   desc: 'Un dap invisible que viaja por el aire. Casi no se ve.', tip: 'Atento a la distorsión del aire: bloquea o salta.',
@@ -346,7 +387,7 @@ def('invisibleDap', {
 });
 
 def('noLook360', {
-  name: '360 No Look', cost: 20, cd: 90, startup: 18, active: 6, recovery: 16, voice: 'no look', color: '#7df9ff', passThrough: true,
+  name: '360 No Look', cost: 20, cd: 90, startup: 18, active: 6, recovery: 16, color: '#7df9ff', passThrough: true,
   invuln: [3, 15], invulnType: 'strike', motion: [[2, 16, 10]],
   anim: [[0, 'guard'], [2, 'siuSpin'], [16, 'siuSpin'], [18, 'backhand', 'snap'], [24, 'backhand'], [40, 'guard']], mods: [[2, 18, 'spin']],
   on: { frame(f, b, m, t) { if (t === 17) { const d = b.targetFor(f); if (d && Math.sign(d.x - f.x) !== f.facing) m.data.cross = true; } } },
@@ -356,7 +397,7 @@ def('noLook360', {
 });
 
 def('disrespectfulDodge', {
-  name: 'Disrespectful Dodge', cost: 10, cd: 60, startup: 1, active: 26, recovery: 14, voice: '', color: '#a0ffa0',
+  name: 'Disrespectful Dodge', cost: 10, cd: 60, startup: 1, active: 26, recovery: 14, color: '#a0ffa0',
   invuln: [1, 26], invulnType: 'high',
   anim: [[0, 'matrix', 'snap'], [27, 'matrix'], [41, 'guard']],
   on: {
@@ -371,7 +412,7 @@ def('disrespectfulDodge', {
 });
 
 def('reverseAura', {
-  name: 'Reverse Aura', cost: 25, cd: 300, startup: 14, active: 6, recovery: 18, voice: '', color: '#9933ff',
+  name: 'Reverse Aura', cost: 25, cd: 300, startup: 14, active: 6, recovery: 18, color: '#9933ff',
   anim: [[0, 'pray'], [14, 'kissOut', 'snap'], [38, 'guard']],
   proj: { at: 14, kind: 'spiral', speed: 6, oy: -110, w: 60, h: 80, life: 34, hit: H(40, { stun: 14, kb: [2, 0], status: { id: 'inverted', frames: 200 } }) },
   desc: 'Espiral oscura de corto alcance: invierte los controles izquierda/derecha del rival durante 3 s.', tip: 'Bloquéala o esquívala con dash.',
@@ -379,7 +420,7 @@ def('reverseAura', {
 });
 
 def('dramaticEntrance', {
-  name: 'Dramatic Entrance', cost: 30, cd: 300, startup: 64, active: 6, recovery: 26, voice: '', color: '#ff7b00', gravity: 0,
+  name: 'Dramatic Entrance', cost: 30, cd: 300, startup: 64, active: 6, recovery: 26, color: '#ff7b00', gravity: 0,
   invuln: [1, 62],
   anim: [[0, 'jump'], [8, 'jump'], [62, 'diveKick'], [66, 'heroLand', 'snap'], [96, 'heroLand']],
   on: {
@@ -406,7 +447,7 @@ def('dramaticEntrance', {
 });
 
 def('phantomDap', {
-  name: 'Phantom Dap', cost: 25, cd: 150, startup: 16, active: 20, recovery: 14, voice: '', color: '#b9a7ff',
+  name: 'Phantom Dap', cost: 25, cd: 150, startup: 16, active: 20, recovery: 14, color: '#b9a7ff',
   anim: [[0, 'pray'], [16, 'dap', 'snap'], [50, 'guard']],
   proj: { at: [16, 24, 32], kind: 'ghost', speed: 12, oy: -80, w: 46, h: 140, life: 80, hit: H(30, { stun: 14, kb: [3, 0] }) },
   desc: 'Tres stickmans fantasma salen corriendo a darle un dap al rival.', tip: 'Salta por encima o refléjalos.',
@@ -429,7 +470,7 @@ def('emoteCancel', {
 });
 
 def('infiniteMewing', {
-  name: 'Infinite Mewing', cost: 45, cd: 1800, startup: 26, active: 1, recovery: 8, buffOnly: true, fragile: true, voice: 'infinite mewing', color: '#6fd8ff',
+  name: 'Infinite Mewing', cost: 45, cd: 1800, startup: 26, active: 1, recovery: 8, buffOnly: true, fragile: true, color: '#6fd8ff',
   anim: [[0, 'guard'], [10, 'gigachad'], [35, 'gigachad']],
   on: { active(f, b, m) { if (m.data.interrupted) return; f.addStatus('infMewing', 600, {}, f); fx(b, 'jawline', { f, big: true }); say(b, f, 'INFINITE MEWING', '#6fd8ff'); } },
   desc: 'Mewing definitivo: defensa +50%, regeneración y energía durante 10 s.', tip: 'Interrúmpelo durante la preparación.',
@@ -437,7 +478,7 @@ def('infiniteMewing', {
 });
 
 def('auraTheft', {
-  name: 'Aura Theft', cost: 25, cd: 120, startup: 12, active: 4, recovery: 18, voice: '', color: '#ffd700',
+  name: 'Aura Theft', cost: 25, cd: 120, startup: 12, active: 4, recovery: 18, color: '#ffd700',
   anim: [[0, 'charge'], [12, 'slap', 'snap'], [34, 'guard']],
   hit: H(60, { stun: 22, kb: [4, 0], box: frontBox(10, -150, 80, 70), spark: 'medium' }),
   on: { hit(f, b, m, d) { f.heal(60); const e = Math.min(20, d.energy); d.gainEnergy(-e); f.gainEnergy(e); fx(b, 'theft', { a: f, f: d }); say(b, f, 'AURA ROBADA', '#ffd700'); } },
@@ -446,7 +487,7 @@ def('auraTheft', {
 });
 
 def('sigmaTeleport', {
-  name: 'Sigma Teleport', cost: 25, cd: 120, startup: 16, active: 4, recovery: 16, voice: '', color: '#c084fc',
+  name: 'Sigma Teleport', cost: 25, cd: 120, startup: 16, active: 4, recovery: 16, color: '#c084fc',
   invuln: [1, 9],
   anim: [[0, 'armsCrossed'], [9, 'armsCrossed'], [10, 'dapW'], [16, 'shoulder', 'snap'], [36, 'guard']],
   on: {
@@ -466,7 +507,7 @@ def('sigmaTeleport', {
 });
 
 def('crowdControl', {
-  name: 'Crowd Control', cost: 30, cd: 300, startup: 20, active: 30, recovery: 10, voice: 'crowd go wild', color: '#ffa94d',
+  name: 'Crowd Control', cost: 30, cd: 300, startup: 20, active: 30, recovery: 10, color: '#ffa94d',
   anim: [[0, 'guard'], [10, 'conduct'], [60, 'conduct']], mods: [[10, 60, 'conduct']],
   on: {
     frame(f, b, m, t) {
@@ -484,7 +525,7 @@ def('crowdControl', {
 });
 
 def('skibidiSpin', {
-  name: 'Skibidi Spin', cost: 20, cd: 90, startup: 8, active: 30, recovery: 14, voice: 'skibidi', color: '#7df9ff',
+  name: 'Skibidi Spin', cost: 20, cd: 90, startup: 8, active: 30, recovery: 14, color: '#7df9ff',
   motion: [[8, 38, 2.5]],
   anim: [[0, 'guard'], [8, 'tPose'], [38, 'tPose'], [52, 'guard']], mods: [[8, 38, 'spin']],
   hit: H(14, { stun: 14, kb: [2, 0], every: 6, box: { around: true, w: 150, h: 120, y: -40 }, spark: 'light' }),
@@ -493,7 +534,7 @@ def('skibidiSpin', {
 });
 
 def('griddy', {
-  name: 'Griddy', cost: 15, cd: 60, startup: 6, active: 26, recovery: 14, voice: '', color: '#50fa7b',
+  name: 'Griddy', cost: 15, cd: 60, startup: 6, active: 26, recovery: 14, color: '#50fa7b',
   motion: [[6, 32, 7]],
   anim: [[0, 'guard'], [6, 'idle'], [32, 'idle'], [46, 'guard']], mods: [[6, 32, 'griddy']],
   hit: H(50, { stun: 20, kb: [3, 0], height: 'low', knockdown: true, maxHits: 1, box: frontBox(0, -40, 60, 40) }),
@@ -502,7 +543,7 @@ def('griddy', {
 });
 
 def('hitTheWoah', {
-  name: 'Hit the Woah', cost: 8, cd: 24, startup: 5, active: 4, recovery: 12, voice: '', color: '#8be9fd',
+  name: 'Hit the Woah', cost: 8, cd: 24, startup: 5, active: 4, recovery: 12, color: '#8be9fd',
   anim: [[0, 'wave'], [5, 'slap', 'snap'], [9, 'slap'], [21, 'guard']],
   hit: H(45, { stun: 20, kb: [6, 0], box: frontBox(10, -170, 90, 70), spark: 'medium' }),
   desc: 'Barrido de brazo rápido estilo "woah". Gran herramienta de presión.', tip: 'Bloquéalo o agáchate (golpea alto).',
@@ -510,7 +551,7 @@ def('hitTheWoah', {
 });
 
 def('flossShield', {
-  name: 'Floss Shield', cost: 15, cd: 150, startup: 3, active: 50, recovery: 10, voice: '', color: '#ff79c6',
+  name: 'Floss Shield', cost: 15, cd: 150, startup: 3, active: 50, recovery: 10, color: '#ff79c6',
   anim: [[0, 'idle'], [63, 'idle']], mods: [[0, 53, 'floss']],
   counter: {
     from: 3, to: 53, types: ['projectile', 'strike'],
@@ -525,7 +566,7 @@ def('flossShield', {
 });
 
 def('dabOn', {
-  name: 'Dab On Them', cost: 15, cd: 60, startup: 10, active: 6, recovery: 16, voice: 'dab', color: '#50fa7b',
+  name: 'Dab On Them', cost: 15, cd: 60, startup: 10, active: 6, recovery: 16, color: '#50fa7b',
   motion: [[10, 16, 9]],
   anim: [[0, 'dab', 'snap'], [10, 'dab'], [12, 'shoulder', 'snap'], [16, 'shoulder'], [32, 'guard']],
   hit: H(60, { stun: 22, kb: [7, 0], box: frontBox(0, -150, 70, 80), status: { id: 'tilted', frames: 300 } }),
@@ -534,7 +575,7 @@ def('dabOn', {
 });
 
 def('sheesh', {
-  name: 'SHEEESH', cost: 20, cd: 90, startup: 12, active: 4, recovery: 18, voice: 'sheeeesh', color: '#00e5ff',
+  name: 'SHEEESH', cost: 20, cd: 90, startup: 12, active: 4, recovery: 18, color: '#00e5ff',
   charge: { at: 10, max: 60 },
   anim: [[0, 'charge'], [12, 'armsUp', 'snap'], [34, 'guard']], mods: [[0, 11, 'tremble']],
   proj: {
@@ -550,7 +591,7 @@ def('sheesh', {
 });
 
 def('ratio', {
-  name: 'Ratio', cost: 15, cd: 90, startup: 10, active: 4, recovery: 14, voice: 'ratio', color: '#3fa9f5',
+  name: 'Ratio', cost: 15, cd: 90, startup: 10, active: 4, recovery: 14, color: '#3fa9f5',
   anim: [[0, 'guard'], [10, 'point', 'snap'], [28, 'guard']],
   proj: {
     at: 10, count: 3,
@@ -563,7 +604,7 @@ def('ratio', {
 });
 
 def('lBozo', {
-  name: 'L + Bozo', cost: 0, cd: 200, startup: 8, active: 40, recovery: 8, taunt: true, voice: 'L bozo', color: '#ff5555',
+  name: 'L + Bozo', cost: 0, cd: 200, startup: 8, active: 40, recovery: 8, taunt: true, color: '#ff5555',
   anim: [[0, 'lForehead'], [56, 'lForehead']], mods: [[0, 56, 'bob']],
   on: {
     active(f, b, m) {
@@ -579,7 +620,7 @@ def('lBozo', {
 });
 
 def('fanumTax', {
-  name: 'Fanum Tax', cost: 0, cd: 300, startup: 6, active: 4, recovery: 16, voice: 'fanum tax', color: '#ffb86c',
+  name: 'Fanum Tax', cost: 0, cd: 300, startup: 6, active: 4, recovery: 16, color: '#ffb86c',
   anim: [[0, 'guard'], [6, 'slap', 'snap'], [26, 'guard']], motion: [[2, 8, 7]],
   hit: { dmg: 25, grab: true, box: frontBox(10, -150, 70, 100) },
   on: {
@@ -598,7 +639,7 @@ def('fanumTax', {
 });
 
 def('ohioMode', {
-  name: 'Ohio Mode', cost: 25, cd: 240, startup: 16, active: 1, recovery: 16, voice: 'only in ohio', color: '#7cfc00',
+  name: 'Ohio Mode', cost: 25, cd: 240, startup: 16, active: 1, recovery: 16, color: '#7cfc00',
   anim: [[0, 'guard'], [8, 'armsUp'], [33, 'guard']], mods: [[0, 16, 'jitter']],
   on: {
     active(f, b, m) {
@@ -618,7 +659,7 @@ def('ohioMode', {
 });
 
 def('mainCharacter', {
-  name: 'Main Character', cost: 20, cd: 600, startup: 16, active: 1, recovery: 8, buffOnly: true, voice: 'main character energy', color: '#fff2a8',
+  name: 'Main Character', cost: 20, cd: 600, startup: 16, active: 1, recovery: 8, buffOnly: true, color: '#fff2a8',
   anim: [[0, 'guard'], [8, 'armsUp'], [25, 'flex']],
   on: { active(f, b) { f.addStatus('mainChar', 360, {}, f); b.emit('crowd', { f, mood: 'cheer' }); fx(b, 'spotlight', { f }); say(b, f, 'MAIN CHARACTER', '#fff2a8'); } },
   desc: 'Foco y ovación: +15% de daño y +50% de energía durante 6 s.', tip: 'Defiéndete hasta que se apague el foco.',
@@ -634,7 +675,7 @@ def('delulu', {
 });
 
 def('touchGrass', {
-  name: 'Touch Grass', cost: 20, cd: 150, startup: 12, active: 2, recovery: 16, voice: 'go touch grass', color: '#33dd55',
+  name: 'Touch Grass', cost: 20, cd: 150, startup: 12, active: 2, recovery: 16, color: '#33dd55',
   anim: [[0, 'guard'], [12, 'crouchPoint', 'snap'], [30, 'guard']],
   on: {
     active(f, b, m) {
@@ -648,7 +689,7 @@ def('touchGrass', {
 });
 
 def('bombasticSideEye', {
-  name: 'Bombastic Side Eye', cost: 25, cd: 150, startup: 18, active: 8, recovery: 16, voice: 'bombastic side eye', color: '#ffe066',
+  name: 'Bombastic Side Eye', cost: 25, cd: 150, startup: 18, active: 8, recovery: 16, color: '#ffe066',
   anim: [[0, 'sideEye'], [42, 'sideEye']],
   on: {
     frame(f, b, m, t) {
@@ -667,7 +708,7 @@ def('bombasticSideEye', {
 });
 
 def('caughtIn4K', {
-  name: 'Caught in 4K', cost: 15, cd: 150, startup: 10, active: 6, recovery: 14, voice: 'caught in 4K', color: '#ffffff',
+  name: 'Caught in 4K', cost: 15, cd: 150, startup: 10, active: 6, recovery: 14, color: '#ffffff',
   anim: [[0, 'phone'], [30, 'phone']],
   on: {
     frame(f, b, m, t) {
@@ -687,7 +728,7 @@ def('caughtIn4K', {
 });
 
 def('letHimCook', {
-  name: 'Let Him Cook', cost: 0, cd: 600, startup: 50, active: 1, recovery: 6, buffOnly: true, fragile: true, voice: 'let him cook', color: '#ff8844',
+  name: 'Let Him Cook', cost: 0, cd: 600, startup: 50, active: 1, recovery: 6, buffOnly: true, fragile: true, color: '#ff8844',
   anim: [[0, 'stir'], [57, 'stir']], mods: [[0, 50, 'stir']],
   on: { active(f, b, m) { if (m.data.interrupted) { say(b, f, 'SE QUEMÓ', '#888888', true); return; } f.addStatus('cooking', 600, {}, f); say(b, f, 'LET HIM COOK', '#ff8844'); fx(b, 'cook', { f }); } },
   desc: 'Remueves la olla: tu siguiente especial o ultimate hace x1.5 de daño y cuesta la mitad.', tip: 'Golpéalo mientras cocina para quemar el plato.',
@@ -695,7 +736,7 @@ def('letHimCook', {
 });
 
 def('cooked', {
-  name: "You're Cooked", cost: 30, cd: 240, startup: 10, active: 6, recovery: 22, voice: "he's cooked", color: '#ff5500',
+  name: "You're Cooked", cost: 30, cd: 240, startup: 10, active: 6, recovery: 22, color: '#ff5500',
   motion: [[4, 12, 8]],
   anim: [[0, 'guard'], [10, 'slap', 'snap'], [38, 'guard']],
   hit: { dmg: 0, grab: true, box: frontBox(10, -150, 80, 110) },
@@ -703,8 +744,9 @@ def('cooked', {
     grab(f, b, m, d) {
       if (d.auraPct > 0.3) { b.dealDamage(f, d, 30); d.setState('hitstun'); d.hitstun = 14; say(b, f, 'NO ESTÁ COCINADO', '#888888', true); m.hit = true; return; }
       b.startLock(f, d, {
-        frames: 60, off: [58, 0], tpose: 'held', cine: true,
+        frames: 60, off: [74, 0], tpose: 'held', cine: true,
         anim: [[0, 'bonkW'], [20, 'bonkW'], [26, 'bonk', 'snap'], [44, 'bonkW'], [50, 'bonk', 'snap'], [60, 'bonk']],
+        hands: (a, t, fr) => { const w1 = faceHit(a, t, 'n', 25, 32, fr, 'top') || faceHit(a, t, 'n', 49, 60, fr, 'top'); return w1 ? { n: w1 } : null; },
         hits: [{ f: 26, dmg: 50, spark: 'heavy', fx: 'pan' }, { f: 50, dmg: 90, spark: 'mega', fx: 'pan', say: 'COOKED 🍳', last: true }],
         end: { kb: [9, -8], knockdown: true }
       });
@@ -715,7 +757,7 @@ def('cooked', {
 });
 
 def('gigachadJaw', {
-  name: 'Gigachad Jaw', cost: 15, cd: 60, startup: 14, active: 4, recovery: 18, voice: '', color: '#d0d0d0',
+  name: 'Gigachad Jaw', cost: 15, cd: 60, startup: 14, active: 4, recovery: 18, color: '#d0d0d0',
   armor: [4, 14], motion: [[12, 18, 6]],
   anim: [[0, 'gigachad'], [12, 'gigachad'], [14, 'headbutt', 'snap'], [18, 'headbutt'], [36, 'guard']],
   hit: H(90, { stun: 24, kb: [9, -3], box: { joint: 'head', r: 26 }, spark: 'heavy' }),
@@ -724,7 +766,7 @@ def('gigachadJaw', {
 });
 
 def('mog', {
-  name: 'Mog', cost: 15, cd: 300, startup: 20, active: 10, recovery: 10, voice: 'mogged', color: '#555577',
+  name: 'Mog', cost: 15, cd: 300, startup: 20, active: 10, recovery: 10, color: '#555577',
   anim: [[0, 'guard'], [12, 'tall'], [40, 'tall']],
   on: {
     active(f, b, m) {
@@ -740,7 +782,7 @@ def('mog', {
 });
 
 def('susVent', {
-  name: 'Sus Vent', cost: 25, cd: 180, startup: 44, active: 6, recovery: 20, voice: 'sus', color: '#ff3b3b',
+  name: 'Sus Vent', cost: 25, cd: 180, startup: 44, active: 6, recovery: 20, color: '#ff3b3b',
   invuln: [4, 40],
   anim: [[0, 'vent'], [6, 'vent'], [40, 'vent'], [44, 'uppercut', 'snap'], [70, 'guard']],
   on: {
@@ -758,7 +800,7 @@ def('susVent', {
 });
 
 def('emotionalDamage', {
-  name: 'Emotional Damage', cost: 15, cd: 120, startup: 12, active: 2, recovery: 16, voice: 'emotional damage', color: '#ff4d6d',
+  name: 'Emotional Damage', cost: 15, cd: 120, startup: 12, active: 2, recovery: 16, color: '#ff4d6d',
   anim: [[0, 'guard'], [12, 'point', 'snap'], [30, 'guard']],
   proj: { at: 12, kind: 'brokenHeart', speed: 5, oy: -125, w: 36, h: 32, life: 200, hit: H(35, { stun: 16, kb: [2, 0] }), onHit: (b, p, d) => { d.gainEnergy(-25); b.emit('callout', { f: d, text: 'EMOTIONAL DAMAGE', color: '#ff4d6d' }); } },
   desc: 'Corazón roto lento que daña y quita 25 de energía.', tip: 'Es lento: esquívalo saltando o agáchate.',
@@ -766,7 +808,7 @@ def('emotionalDamage', {
 });
 
 def('bonk', {
-  name: 'Bonk', cost: 15, cd: 60, startup: 18, active: 4, recovery: 18, voice: 'bonk', color: '#d6a46b',
+  name: 'Bonk', cost: 15, cd: 60, startup: 18, active: 4, recovery: 18, color: '#d6a46b',
   anim: [[0, 'bonkW'], [18, 'bonk', 'snap'], [22, 'bonk'], [40, 'guard']],
   hit: H(80, { stun: 24, kb: [3, 0], height: 'high', box: frontBox(20, -190, 80, 150), status: { id: 'dizzy', frames: 40 }, spark: 'heavy', fx: 'bonk' }),
   desc: 'Martillazo por arriba (overhead): marea al rival. Hay que bloquearlo de pie.', tip: 'No te agaches: bloquea de pie.',
@@ -774,7 +816,7 @@ def('bonk', {
 });
 
 def('perfectlyBalanced', {
-  name: 'Perfectly Balanced', cost: 0, cd: 1200, startup: 24, active: 1, recovery: 12, buffOnly: true, voice: 'perfectly balanced', color: '#b388ff',
+  name: 'Perfectly Balanced', cost: 0, cd: 1200, startup: 24, active: 1, recovery: 12, buffOnly: true, color: '#b388ff',
   anim: [[0, 'guard'], [20, 'snap'], [24, 'snap', 'snap'], [37, 'guard']],
   on: {
     active(f, b) {
@@ -808,7 +850,7 @@ def('spidermanPoint', {
 });
 
 def('thisIsFine', {
-  name: 'This Is Fine', cost: 20, cd: 900, startup: 18, active: 1, recovery: 8, buffOnly: true, voice: 'this is fine', color: '#ff6a00',
+  name: 'This Is Fine', cost: 20, cd: 900, startup: 18, active: 1, recovery: 8, buffOnly: true, color: '#ff6a00',
   anim: [[0, 'guard'], [10, 'sit'], [27, 'sit']],
   on: { active(f, b) { f.addStatus('thisIsFine', 360, {}, f); fx(b, 'fire', { f }); say(b, f, 'THIS IS FINE 🔥', '#ff6a00'); } },
   desc: 'Todo arde y te da igual: armadura contra golpes débiles y quien te golpee se quema (6 s).', tip: 'Usa proyectiles o golpes fuertes.',
@@ -816,7 +858,7 @@ def('thisIsFine', {
 });
 
 def('stonks', {
-  name: 'Stonks', cost: 30, cd: 600, startup: 14, active: 1, recovery: 8, buffOnly: true, voice: 'stonks', color: '#44ff88',
+  name: 'Stonks', cost: 30, cd: 600, startup: 14, active: 1, recovery: 8, buffOnly: true, color: '#44ff88',
   anim: [[0, 'guard'], [8, 'stonks'], [23, 'stonks']],
   on: {
     active(f, b) {
@@ -829,7 +871,7 @@ def('stonks', {
 });
 
 def('bigBrain', {
-  name: 'Big Brain', cost: 25, cd: 600, startup: 30, active: 1, recovery: 6, buffOnly: true, fragile: true, voice: 'big brain', color: '#ff99ff',
+  name: 'Big Brain', cost: 25, cd: 600, startup: 30, active: 1, recovery: 6, buffOnly: true, fragile: true, color: '#ff99ff',
   anim: [[0, 'think'], [37, 'think']],
   on: { active(f, b, m) { if (m.data.interrupted) return; f.addStatus('bigBrain', 240, {}, f); fx(b, 'brain', { f }); say(b, f, 'BIG BRAIN', '#ff99ff'); } },
   desc: 'Predices el futuro: el próximo golpe que recibas en 4 s se convierte en parry automático.', tip: 'Usa agarres o espera a que expire.',
@@ -837,9 +879,9 @@ def('bigBrain', {
 });
 
 def('narutoRun', {
-  name: 'Naruto Run', cost: 10, cd: 90, startup: 4, active: 36, recovery: 8, voice: '', color: '#ffa040',
+  name: 'Naruto Run', cost: 10, cd: 90, startup: 4, active: 36, recovery: 8, color: '#ffa040',
   motion: [[4, 40, 12]], speedScaled: true,
-  anim: [[0, 'naruto'], [44, 'naruto']], mods: [[0, 40, 'walkLegs']],
+  anim: [[0, 'naruto'], [44, 'naruto']],
   hit: H(40, { stun: 18, kb: [8, 0], maxHits: 1, box: frontBox(0, -150, 50, 120) }),
   on: {
     start(f) { f.addStatus('narutoRun', 40, {}, f); f.trail = 40; },
@@ -857,7 +899,7 @@ def('narutoRun', {
 });
 
 def('oraBarrage', {
-  name: 'ORA Barrage', cost: 30, cd: 150, startup: 10, active: 36, recovery: 18, voice: 'ora ora ora ora', color: '#b388ff',
+  name: 'ORA Barrage', cost: 30, cd: 150, startup: 10, active: 36, recovery: 18, color: '#b388ff',
   anim: [[0, 'jojo'], [10, 'punchFwd'], [46, 'punchFwd'], [64, 'guard']], mods: [[10, 46, 'barrage']],
   hit: H(9, { stun: 12, kb: [1.2, 0], every: 3, box: frontBox(20, -165, 100, 90), spark: 'light', chip: 0.18 }),
   on: { frame(f, b, m, t) { if (t > 10 && t < 46 && t % 3 === 0) fx(b, 'standFist', { f }); if (t === 45 && m.hitCount > 4) { const d = first(b, f, 140); if (d && d.state === 'hitstun') { d.setState('airhit'); d.grounded = false; d.vx = f.facing * 10; d.vy = -7; d.knockdownOnLand = true; d.y -= 1; } } } },
@@ -866,7 +908,7 @@ def('oraBarrage', {
 });
 
 def('omaeWaMou', {
-  name: 'Omae Wa Mou', cost: 35, cd: 300, startup: 12, active: 4, recovery: 20, voice: 'omae wa mou shindeiru', color: '#ff2222',
+  name: 'Omae Wa Mou', cost: 35, cd: 300, startup: 12, active: 4, recovery: 20, color: '#ff2222',
   anim: [[0, 'guard'], [12, 'point', 'snap'], [36, 'guard']],
   hit: H(12, { stun: 12, kb: [2, 0], box: frontBox(20, -150, 70, 70) }),
   on: {
@@ -888,7 +930,7 @@ def('omaeWaMou', {
 });
 
 def('falconPunch', {
-  name: 'Falcon Punch', cost: 25, cd: 120, startup: 30, active: 5, recovery: 30, voice: 'falcon punch', color: '#ff7b00',
+  name: 'Falcon Punch', cost: 25, cd: 120, startup: 30, active: 5, recovery: 30, color: '#ff7b00',
   armor: [10, 30], motion: [[28, 35, 10]],
   anim: [[0, 'falconW'], [26, 'falconW'], [30, 'lunge', 'snap'], [35, 'lunge'], [65, 'guard']], mods: [[0, 28, 'tremble']],
   hit: H(150, { stun: 30, kb: [14, -7], knockdown: true, wallBounce: true, box: { joint: 'fHand', r: 26 }, spark: 'mega', fx: 'fireFist' }),
@@ -897,7 +939,7 @@ def('falconPunch', {
 });
 
 def('rickroll', {
-  name: 'Rickroll', cost: 30, cd: 300, startup: 18, active: 20, recovery: 14, voice: 'never gonna give you up', color: '#ff66ff',
+  name: 'Rickroll', cost: 30, cd: 300, startup: 18, active: 20, recovery: 14, color: '#ff66ff',
   anim: [[0, 'idle'], [52, 'idle']], mods: [[0, 52, 'dance']],
   proj: { at: 18, kind: 'notes', speed: 0, oy: -90, ox: 0, w: 60, h: 200, life: 24, pierce: true, clash: false,
     onUpdate: (b, p) => { p.w += 26; },
@@ -907,7 +949,7 @@ def('rickroll', {
 });
 
 def('bingChilling', {
-  name: 'Bing Chilling', cost: 20, cd: 150, startup: 14, active: 2, recovery: 16, voice: 'bing chilling', color: '#aee8ff',
+  name: 'Bing Chilling', cost: 20, cd: 150, startup: 14, active: 2, recovery: 16, color: '#aee8ff',
   anim: [[0, 'guard'], [14, 'kissOut', 'snap'], [32, 'guard']],
   proj: { at: 14, kind: 'icecream', speed: 7, vy: -9, gravity: 0.4, oy: -140, w: 30, h: 34, life: 120, hit: H(30, { stun: 14, kb: [1, 0], status: { id: 'frozen', frames: 60 } }) },
   desc: 'Lanzas un helado en parábola: congela al rival 1 s.', tip: 'Calcula la parábola y apártate o bloquea.',
@@ -915,7 +957,7 @@ def('bingChilling', {
 });
 
 def('ankleBreaker', {
-  name: 'Ankle Breaker', cost: 15, cd: 90, startup: 3, active: 16, recovery: 12, voice: 'ankles', color: '#ffb86c',
+  name: 'Ankle Breaker', cost: 15, cd: 90, startup: 3, active: 16, recovery: 12, color: '#ffb86c',
   invuln: [2, 16], invulnType: 'strike', motion: [[2, 16, 5]],
   anim: [[0, 'crouch'], [6, 'backdash'], [12, 'crouch'], [31, 'guard']],
   on: {
@@ -930,7 +972,7 @@ def('ankleBreaker', {
 });
 
 def('micDrop', {
-  name: 'Mic Drop', cost: 20, cd: 150, startup: 16, active: 4, recovery: 18, voice: '', color: '#cccccc',
+  name: 'Mic Drop', cost: 20, cd: 150, startup: 16, active: 4, recovery: 18, color: '#cccccc',
   anim: [[0, 'micHold'], [14, 'micHold'], [16, 'thumbsDown', 'snap'], [38, 'guard']],
   on: {
     active(f, b, m) {
@@ -944,7 +986,7 @@ def('micDrop', {
 });
 
 def('dealWithIt', {
-  name: 'Deal With It', cost: 20, cd: 200, startup: 12, active: 1, recovery: 14, voice: 'deal with it', color: '#222222',
+  name: 'Deal With It', cost: 20, cd: 200, startup: 12, active: 1, recovery: 14, color: '#222222',
   anim: [[0, 'guard'], [12, 'stonks', 'snap'], [27, 'guard']],
   on: {
     active(f, b, m) {
@@ -959,7 +1001,7 @@ def('dealWithIt', {
 });
 
 def('bananaSlip', {
-  name: 'Goofy Banana', cost: 10, cd: 120, startup: 10, active: 1, recovery: 12, voice: '', color: '#ffe135',
+  name: 'Goofy Banana', cost: 10, cd: 120, startup: 10, active: 1, recovery: 12, color: '#ffe135',
   anim: [[0, 'guard'], [10, 'kissOut', 'snap'], [23, 'guard']],
   proj: { at: 10, kind: 'banana', speed: 4, vy: -5, gravity: 0.5, oy: -100, w: 40, h: 20, life: 600, clash: false,
     data: { onGround: (b, p) => { p.vx = 0; p.vy = 0; p.gravity = 0; p.y = GROUND_Y - 10; } },
@@ -969,7 +1011,7 @@ def('bananaSlip', {
 });
 
 def('vineBoom', {
-  name: 'Vine Boom', cost: 20, cd: 90, startup: 16, active: 4, recovery: 20, voice: '', color: '#ff2222',
+  name: 'Vine Boom', cost: 20, cd: 90, startup: 16, active: 4, recovery: 20, color: '#ff2222',
   anim: [[0, 'falconW'], [16, 'punchFwd', 'snap'], [20, 'punchFwd'], [40, 'guard']],
   hit: H(95, { stun: 28, kb: [11, -4], box: { joint: 'nHand', r: 24 }, spark: 'mega', hitstop: 18, fx: 'vineBoom' }),
   desc: 'Puñetazo con el BOOM de Vine: hitstop enorme y temblor de pantalla.', tip: 'Es lento: parry o castigo.',
@@ -977,7 +1019,7 @@ def('vineBoom', {
 });
 
 def('bruh', {
-  name: 'Bruh', cost: 15, cd: 90, startup: 8, active: 6, recovery: 14, voice: 'bruh', color: '#9aa0a6',
+  name: 'Bruh', cost: 15, cd: 90, startup: 8, active: 6, recovery: 14, color: '#9aa0a6',
   anim: [[0, 'facepalm'], [8, 'holdUp', 'snap'], [28, 'guard']],
   proj: { at: 8, kind: 'soundwave', speed: 8, oy: -120, w: 40, h: 120, life: 28, pierce: true, hit: H(25, { stun: 12, kb: [2, 0], status: { id: 'dizzy', frames: 35 } }) },
   desc: 'Un "bruh" tan decepcionado que marea al rival a corta distancia.', tip: 'Bloquéalo: es de corto alcance.',
@@ -985,7 +1027,7 @@ def('bruh', {
 });
 
 def('rageQuit', {
-  name: 'Rage Quit', cost: 40, cd: 600, once: true, startup: 30, active: 4, recovery: 30, voice: 'rage quit', color: '#ff0000',
+  name: 'Rage Quit', cost: 40, cd: 600, once: true, startup: 30, active: 4, recovery: 30, color: '#ff0000',
   cond: f => f.auraPct < 0.3, condText: 'NECESITAS <30% AURA',
   anim: [[0, 'rageW'], [30, 'armsUp', 'snap'], [64, 'guard']], mods: [[0, 30, 'tremble']],
   on: {
@@ -1001,7 +1043,7 @@ def('rageQuit', {
 });
 
 def('speedrun', {
-  name: 'Speedrun', cost: 25, cd: 900, startup: 10, active: 1, recovery: 4, buffOnly: true, voice: 'any percent', color: '#55ffee',
+  name: 'Speedrun', cost: 25, cd: 900, startup: 10, active: 1, recovery: 4, buffOnly: true, color: '#55ffee',
   anim: [[0, 'guard'], [6, 'naruto'], [15, 'guard']],
   on: { active(f, b) { f.addStatus('speedrun', 300, {}, f); say(b, f, 'SPEEDRUN ANY%', '#55ffee'); fx(b, 'auraFlare', { f, color: 0x55ffee }); } },
   desc: 'Velocidad +35%, dash con media recarga y recuperación de ataques -20% (5 s).', tip: 'Defiéndete y espera a que acabe.',
@@ -1009,7 +1051,7 @@ def('speedrun', {
 });
 
 def('lagSpike', {
-  name: 'Lag Spike', cost: 20, cd: 240, startup: 12, active: 1, recovery: 12, voice: 'lag', color: '#00ff66',
+  name: 'Lag Spike', cost: 20, cd: 240, startup: 12, active: 1, recovery: 12, color: '#00ff66',
   anim: [[0, 'guard'], [12, 'point', 'snap'], [25, 'guard']],
   on: {
     active(f, b, m) {
@@ -1028,7 +1070,7 @@ def('lagSpike', {
 });
 
 def('auraFarming', {
-  name: 'Aura Farming', cost: 0, cd: 600, startup: 6, active: 84, recovery: 6, buffOnly: true, fragile: true, voice: 'aura farming', color: '#ffe066',
+  name: 'Aura Farming', cost: 0, cd: 600, startup: 6, active: 84, recovery: 6, buffOnly: true, fragile: true, color: '#ffe066',
   anim: [[0, 'idle'], [96, 'idle']], mods: [[0, 90, 'dance']],
   on: {
     start(f, b) { f.addStatus('auraFarm', 96, {}, f); b.emit('crowd', { f, mood: 'cheer' }); },
@@ -1043,15 +1085,15 @@ def('auraFarming', {
 });
 
 def('tungTung', {
-  name: 'Tung Tung Sahur', cost: 20, cd: 120, startup: 12, active: 30, recovery: 16, voice: 'tung tung tung sahur', color: '#c68642',
+  name: 'Tung Tung Tung Sahur', cost: 20, cd: 120, startup: 12, active: 30, recovery: 16, color: '#c68642',
   anim: [[0, 'bonkW'], [12, 'bonk', 'snap'], [18, 'bonkW'], [24, 'bonk', 'snap'], [30, 'bonkW'], [36, 'bonk', 'snap'], [42, 'bonk'], [58, 'guard']],
-  hit: H(32, { stun: 20, kb: [2.5, 0], height: 'high', every: 12, box: frontBox(20, -190, 85, 150), spark: 'medium', fx: 'bonk' }),
+  hit: H(32, { stun: 20, kb: [2.5, 0], height: 'high', every: 12, box: frontBox(20, -190, 85, 150), spark: 'medium', fx: 'tung', react: 'flattened' }),
   desc: 'Tres batazos por arriba al ritmo de "tung tung tung". Bloquéalos de pie.', tip: 'No te agaches.',
   ai: { role: 'overhead', range: [0, 125] }
 });
 
 def('bombardiro', {
-  name: 'Bombardiro', cost: 30, cd: 300, startup: 20, active: 40, recovery: 10, voice: 'bombardiro crocodilo', color: '#6b8e23',
+  name: 'Bombardiro', cost: 30, cd: 300, startup: 20, active: 40, recovery: 10, color: '#6b8e23',
   anim: [[0, 'guard'], [12, 'stonks'], [70, 'stonks']],
   on: {
     frame(f, b, m, t) {
@@ -1071,7 +1113,7 @@ def('bombardiro', {
 });
 
 def('ballerinaSpin', {
-  name: 'Ballerina Spin', cost: 20, cd: 120, startup: 10, active: 14, recovery: 16, voice: 'ballerina cappuccina', color: '#ffb6c1',
+  name: 'Ballerina Spin', cost: 20, cd: 120, startup: 10, active: 14, recovery: 16, color: '#ffb6c1',
   invuln: [1, 8], invulnType: 'strike', motion: [[10, 24, 3, -9]], gravity: 0.6,
   anim: [[0, 'armsUp'], [10, 'siuSpin'], [24, 'siuSpin'], [40, 'guard']], mods: [[0, 26, 'spin']],
   hit: H(26, { stun: 18, kb: [3, -9], launch: true, every: 7, box: { around: true, w: 140, h: 160, y: 0 } }),
@@ -1080,7 +1122,7 @@ def('ballerinaSpin', {
 });
 
 def('ggEz', {
-  name: 'GG EZ', cost: 0, cd: 300, startup: 10, active: 40, recovery: 10, taunt: true, voice: 'G G easy', color: '#7CFC00',
+  name: 'GG EZ', cost: 0, cd: 300, startup: 10, active: 40, recovery: 10, taunt: true, color: '#7CFC00',
   anim: [[0, 'thumbsUp'], [60, 'thumbsUp']], mods: [[0, 60, 'bob']],
   on: {
     active(f, b, m) {
@@ -1094,7 +1136,7 @@ def('ggEz', {
 });
 
 def('clapBack', {
-  name: 'Clap Back', cost: 15, cd: 150, startup: 3, active: 18, recovery: 14, voice: '', color: '#ffd166',
+  name: 'Clap Back', cost: 15, cd: 150, startup: 3, active: 18, recovery: 14, color: '#ffd166',
   anim: [[0, 'holdUp'], [21, 'holdUp'], [21, 'clap', 'snap'], [35, 'guard']],
   counter: {
     from: 3, to: 21, types: ['strike', 'projectile'],
@@ -1115,7 +1157,7 @@ def('clapBack', {
 });
 
 def('shush', {
-  name: 'Shush', cost: 20, cd: 300, startup: 12, active: 4, recovery: 14, voice: 'shhh', color: '#cccccc',
+  name: 'Shush', cost: 20, cd: 300, startup: 12, active: 4, recovery: 14, color: '#cccccc',
   anim: [[0, 'guard'], [10, 'shush'], [30, 'shush']],
   proj: { at: 12, kind: 'shush', speed: 9, oy: -125, w: 40, h: 90, life: 40, pierce: true, hit: H(15, { stun: 10, kb: [1, 0], status: { id: 'silenced', frames: 240 } }) },
   desc: 'Dedo en los labios: el rival queda silenciado 4 s (sin especiales, habilidades ni ultimate).', tip: 'Bloquéalo o salta.',
@@ -1123,7 +1165,7 @@ def('shush', {
 });
 
 def('aimbot', {
-  name: 'Finger Guns', cost: 15, cd: 60, startup: 8, active: 10, recovery: 12, voice: 'pew pew', color: '#ff5555',
+  name: 'Finger Guns', cost: 15, cd: 60, startup: 8, active: 10, recovery: 12, color: '#ff5555',
   anim: [[0, 'fingerGuns'], [8, 'fingerGuns', 'snap'], [30, 'guard']],
   proj: { at: [8, 16], kind: 'bullet', speed: 16, oy: -120, w: 20, h: 12, life: 60, hit: H(22, { stun: 12, kb: [2, 0] }) },
   desc: 'Pistolas con los dedos: dos disparos muy rápidos.', tip: 'Bloquea o agáchate.',
@@ -1131,7 +1173,7 @@ def('aimbot', {
 });
 
 def('skillIssue', {
-  name: 'Skill Issue', cost: 0, cd: 240, startup: 10, active: 30, recovery: 10, taunt: true, voice: 'skill issue', color: '#66ccff',
+  name: 'Skill Issue', cost: 0, cd: 240, startup: 10, active: 30, recovery: 10, taunt: true, color: '#66ccff',
   anim: [[0, 'facepalm'], [50, 'facepalm']], mods: [[0, 50, 'laugh']],
   on: {
     active(f, b, m) {
@@ -1147,7 +1189,7 @@ def('skillIssue', {
 });
 
 def('afk', {
-  name: 'AFK', cost: 0, cd: 900, startup: 6, active: 110, recovery: 6, buffOnly: true, fragile: true, voice: '', color: '#8888ff',
+  name: 'AFK', cost: 0, cd: 900, startup: 6, active: 110, recovery: 6, buffOnly: true, fragile: true, color: '#8888ff',
   anim: [[0, 'sleep'], [122, 'sleep']],
   on: {
     frame(f, b, m, t) {
@@ -1160,7 +1202,7 @@ def('afk', {
 });
 
 def('goblinMode', {
-  name: 'Goblin Mode', cost: 20, cd: 600, startup: 14, active: 1, recovery: 6, buffOnly: true, voice: 'goblin mode', color: '#66cc33',
+  name: 'Goblin Mode', cost: 20, cd: 600, startup: 14, active: 1, recovery: 6, buffOnly: true, color: '#66cc33',
   anim: [[0, 'rageW'], [21, 'rageW']], mods: [[0, 21, 'tremble']],
   on: { active(f, b) { f.addStatus('goblin', 360, {}, f); say(b, f, 'GOBLIN MODE', '#66cc33'); fx(b, 'auraFlare', { f, color: 0x66cc33 }); } },
   desc: 'Modo goblin: +20% daño y velocidad, pero recibes +25% de daño (6 s).', tip: 'Arriesga: castígalo fuerte.',
@@ -1168,7 +1210,7 @@ def('goblinMode', {
 });
 
 def('holdUp', {
-  name: 'Hold Up', cost: 15, cd: 150, startup: 6, active: 30, recovery: 10, voice: 'hold up', color: '#dddddd',
+  name: 'Hold Up', cost: 15, cd: 150, startup: 6, active: 30, recovery: 10, color: '#dddddd',
   anim: [[0, 'holdUp'], [46, 'holdUp']],
   counter: {
     from: 4, to: 36, types: ['projectile'],
@@ -1187,7 +1229,7 @@ def('holdUp', {
 });
 
 def('backflipDiss', {
-  name: 'Backflip Diss', cost: 5, cd: 60, startup: 1, active: 22, recovery: 8, voice: '', color: '#ffffff',
+  name: 'Backflip Diss', cost: 5, cd: 60, startup: 1, active: 22, recovery: 8, color: '#ffffff',
   invuln: [2, 18], motion: [[1, 2, -7, -12]], gravity: 1, keepVel: true,
   anim: [[0, 'jump'], [22, 'jump'], [30, 'thumbsDown']], mods: [[1, 22, 'spin']],
   on: { end(f, b) { f.gainEnergy(12); }, land(f, b, m) { m.f = Math.max(m.f, 22); f.vx = 0; } },
@@ -1201,7 +1243,7 @@ def('backflipDiss', {
 const ULT = { slot: 'ult', cost: 100, cine: true };
 
 def('sixSevenBarrage', {
-  ...ULT, name: '67 Barrage', startup: 14, active: 18, recovery: 24, voice: 'six seven six seven six seven', color: '#ffd166',
+  ...ULT, name: '67 Barrage', startup: 14, active: 18, recovery: 24, color: '#ffd166',
   motion: [[14, 32, 14]], invuln: [0, 13],
   anim: [[0, 'palmsUp'], [14, 'dash'], [32, 'dash'], [56, 'guard']],
   hit: { dmg: 0, grab: true, unparryable: false, box: frontBox(0, -160, 80, 150) },
@@ -1211,7 +1253,7 @@ def('sixSevenBarrage', {
       for (let i = 0; i < 16; i++) hits.push({ f: 12 + i * 5, dmg: 11, spark: 'light', fx: 'sixseven' });
       hits.push({ f: 104, dmg: 110, spark: 'mega', fx: 'doublePalm', say: '67!!', sayColor: '#ffd166', last: true, hitstop: 18 });
       b.startLock(f, d, {
-        frames: 116, off: [64, 0], tpose: 'hurt', cine: true,
+        frames: 116, off: [76, 0], tpose: 'hurt', cine: true,
         anim: [[0, 'palmsUp'], [100, 'palmsUp'], [104, 'clap', 'snap'], [116, 'clap']], mods: [[0, 100, 'sixseven']],
         hits, end: { kb: [13, -11], knockdown: true, wallBounce: true }
       });
@@ -1222,7 +1264,7 @@ def('sixSevenBarrage', {
 });
 
 def('rizzStorm', {
-  ...ULT, name: 'Rizz Storm', startup: 20, active: 100, recovery: 20, voice: 'rizz storm', color: '#ff5fa2',
+  ...ULT, name: 'Rizz Storm', startup: 20, active: 100, recovery: 20, color: '#ff5fa2',
   anim: [[0, 'kiss'], [20, 'kissOut', 'snap'], [60, 'fingerGuns'], [100, 'kiss'], [120, 'kissOut', 'snap'], [140, 'guard']], mods: [[20, 100, 'bob']],
   on: {
     frame(f, b, m, t) {
@@ -1244,7 +1286,7 @@ def('rizzStorm', {
 });
 
 def('ultimateNonchalance', {
-  ...ULT, name: 'Ultimate Nonchalance', startup: 40, active: 6, recovery: 30, voice: '', color: '#e0e0e0',
+  ...ULT, name: 'Ultimate Nonchalance', startup: 40, active: 6, recovery: 30, color: '#e0e0e0',
   anim: [[0, 'pockets'], [76, 'pockets']], mods: [[0, 76, 'breathe']],
   on: {
     frame(f, b, m, t) {
@@ -1270,7 +1312,7 @@ def('ultimateNonchalance', {
 });
 
 def('finalAuraJudgment', {
-  ...ULT, name: 'Final Aura Judgment', startup: 30, active: 40, recovery: 24, voice: 'final judgment', color: '#fff6a0',
+  ...ULT, name: 'Final Aura Judgment', startup: 30, active: 40, recovery: 24, color: '#fff6a0',
   anim: [[0, 'pray'], [24, 'judgment', 'snap'], [94, 'judgment']],
   on: {
     frame(f, b, m, t) {
@@ -1293,7 +1335,7 @@ def('finalAuraJudgment', {
 });
 
 def('timeStop', {
-  ...ULT, name: 'Time Stop', startup: 26, active: 1, recovery: 8, voice: 'za warudo', color: '#ffd700',
+  ...ULT, name: 'Time Stop', startup: 26, active: 1, recovery: 8, color: '#ffd700',
   anim: [[0, 'guard'], [20, 'timeStop', 'snap'], [35, 'timeStop']],
   on: { active(f, b) { b.timeStop = { owner: f, t: 150 }; b.emit('timeStop', { f }); say(b, f, 'ZA WARUDO', '#ffd700'); } },
   desc: 'Detienes el tiempo 2,5 s: solo tú puedes moverte. El daño en tiempo parado se reduce un 30%.', tip: 'Gana distancia antes para que no llegue a tiempo.',
@@ -1301,7 +1343,7 @@ def('timeStop', {
 });
 
 def('coffinDance', {
-  ...ULT, name: 'Coffin Dance', startup: 16, active: 8, recovery: 24, voice: 'astronomia', color: '#222222',
+  ...ULT, name: 'Coffin Dance', startup: 16, active: 8, recovery: 24, color: '#222222',
   motion: [[14, 24, 9]],
   anim: [[0, 'coffin'], [16, 'slap', 'snap'], [48, 'guard']],
   hit: { dmg: 0, grab: true, box: frontBox(0, -160, 90, 160) },
@@ -1322,7 +1364,7 @@ def('coffinDance', {
 });
 
 def('sigmaRule', {
-  ...ULT, name: 'Sigma Rule #1', startup: 12, active: 6, recovery: 26, voice: 'sigma rule number one', color: '#c084fc',
+  ...ULT, name: 'Sigma Rule #1', startup: 12, active: 6, recovery: 26, color: '#c084fc',
   invuln: [0, 12],
   anim: [[0, 'armsCrossed'], [12, 'dap', 'snap'], [44, 'guard']],
   on: { frame(f, b, m, t) { if (t === 6) { const d = b.targetFor(f); if (d && Math.abs(d.x - f.x) < 500) { b.teleport(f, d.x - d.facing * 64); f.facing = Math.sign(d.x - f.x) || f.facing; } } } },
@@ -1330,8 +1372,9 @@ def('sigmaRule', {
 });
 MOVES.sigmaRule.on.grab = (f, b, m, d) => {
   b.startLock(f, d, {
-    frames: 100, off: [62, 0], tpose: 'hurt', cine: true,
+    frames: 100, off: [76, 0], tpose: 'hurt', cine: true,
     anim: [[0, 'dap'], [16, 'punchFwd2', 'snap'], [32, 'roundhouse', 'snap'], [48, 'uppercut', 'snap'], [64, 'backhand', 'snap'], [80, 'armsCrossed'], [100, 'armsCrossed']],
+    hands: (a, t, fr) => { const c = faceHit(a, t, 'f', 15, 22, fr, 'chest'); if (c) return { f: c }; const u = faceHit(a, t, 'n', 47, 54, fr, 'face'); return u ? { n: u } : null; },
     hits: [{ f: 16, dmg: 40, spark: 'heavy' }, { f: 32, dmg: 45, spark: 'heavy' }, { f: 48, dmg: 50, spark: 'heavy' }, { f: 64, dmg: 55, spark: 'heavy' }, { f: 90, dmg: 80, spark: 'mega', fx: 'sigmaFinish', say: 'SIGMA', sayColor: '#c084fc', last: true, hitstop: 18 }],
     end: { kb: [12, -8], knockdown: true }
   });
@@ -1341,7 +1384,7 @@ MOVES.sigmaRule.tip = 'Salta justo cuando desaparece.';
 MOVES.sigmaRule.ai = { role: 'ult', range: [0, 480] };
 
 def('domainExpansion', {
-  ...ULT, name: 'Domain Expansion', startup: 30, active: 1, recovery: 10, voice: 'domain expansion', color: '#8a2be2',
+  ...ULT, name: 'Domain Expansion', startup: 30, active: 1, recovery: 10, color: '#8a2be2',
   anim: [[0, 'guard'], [20, 'pray', 'snap'], [41, 'pray']],
   on: { active(f, b) { b.domain = { owner: f, t: 360 }; f.addStatus('domain', 360, {}, f); b.emit('domain', { f }); say(b, f, 'DOMAIN EXPANSION', '#c77dff'); } },
   desc: 'Expandes tu dominio 6 s: tus golpes no se pueden bloquear y los rivales se mueven un 25% más lento.', tip: 'Usa parries y esquivas hasta que se cierre.',
@@ -1349,7 +1392,7 @@ def('domainExpansion', {
 });
 
 def('auraOverload', {
-  ...ULT, name: 'Aura Overload', startup: 36, active: 10, recovery: 34, voice: 'aura overload', color: '#ffffff',
+  ...ULT, name: 'Aura Overload', startup: 36, active: 10, recovery: 34, color: '#ffffff',
   armor: [0, 36],
   anim: [[0, 'charge'], [34, 'charge'], [36, 'armsUp', 'snap'], [80, 'armsUp']], mods: [[0, 36, 'tremble']],
   on: {
@@ -1366,6 +1409,350 @@ def('auraOverload', {
 // =====================================================================
 // metadatos derivados
 // =====================================================================
+
+// =====================================================================
+// NUEVAS TÉCNICAS DE AURA Y BRAINROT
+// =====================================================================
+
+def('snapWalk', {
+  name: 'Paseo de Chasquidos', cost: 10, cd: 240, startup: 6, active: 75, recovery: 10, fragile: true, color: '#b388ff',
+  motion: [[6, 81, 2.4]],
+  anim: [[0, 'guard'], [6, 'snapWalk'], [81, 'snapWalk'], [91, 'guard']], mods: [[6, 81, 'snapBeat']],
+  on: {
+    frame(f, b, m, t) {
+      if (t < 6 || t > 80 || m.data.interrupted || (t - 6) % 15 !== 0) return;
+      // cada chasquido, al ritmo, genera aura y energía; si el rival está cerca, le saca de quicio
+      m.data.snaps = (m.data.snaps || 0) + 1;
+      f.heal(16 + m.data.snaps * 4); f.gainEnergy(5);
+      fx(b, 'snapBeat', { f, i: m.data.snaps });
+      for (const d of b.enemiesInRange(f, 180, true, 160)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.isImmune('humiliate')) continue;
+        if (b.drain(f, d, 10, 'CHASQUIDO', '#b388ff')) { d.addStatus('tilted', 45, {}, f); m.hit = true; }
+      }
+    }
+  },
+  desc: 'Caminas con actitud chasqueando los dedos al ritmo: cada chasquido te da aura y energía; de cerca, tiltea y humilla al rival.', tip: 'Es frágil: cualquier golpe corta el paseo.',
+  ai: { role: 'buff', range: [200, 2000] }
+});
+
+def('sixSevenSlam', {
+  name: 'Six Seven Slam', cost: 20, cd: 120, startup: 16, active: 4, recovery: 20, color: '#ffd166',
+  anim: [[0, 'palmsUp'], [8, 'armsUp', 'out'], [16, 'palmSlam', 'snap'], [26, 'palmSlam'], [40, 'guard']], mods: [[0, 8, 'sixseven']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'sixsevenSlam', { f });
+      for (const dir of [1, -1]) {
+        b.spawnProjectile(f, { kind: 'shockwave', x: f.x + dir * 50 * f.scale, y: GROUND_Y - 22, absVx: true, vx: dir * 11, w: 90, h: 44, life: 28, pierce: true, clash: false,
+          hit: H(55, { stun: 22, height: 'low', kb: [5, -6], knockdown: true, react: 'hurtLow' }), src: 'sixSevenSlam', staleK: m.staleK });
+      }
+    }
+  },
+  desc: 'Seis, siete... ¡y palmada al suelo! Dos ondas bajas recorren el suelo hacia ambos lados y derriban.', tip: 'Salta las ondas o bloquea agachado.',
+  ai: { role: 'low', range: [0, 420] }
+});
+
+def('fakeGreeting', {
+  name: 'Saludo Falso', cost: 10, cd: 90, startup: 18, active: 4, recovery: 16, color: '#8be9fd',
+  motion: [[12, 18, 9]],
+  anim: [[0, 'wave'], [12, 'wave'], [16, 'jabW', 'out'], [18, 'flick', 'snap'], [22, 'flick'], [38, 'guard']], mods: [[0, 12, 'wave']],
+  hit: H(40, { stun: 26, height: 'high', kb: [3, 0], box: frontBox(0, -200, 85, 70), status: { id: 'dizzy', frames: 30 }, react: 'hurtHead', spark: 'medium', fx: 'flick' }),
+  contacts: [{ hand: 'n', at: 'face', from: 18, to: 24, onHit: true }],
+  on: { start(f, b) { say(b, f, '¡HOLA!', '#8be9fd', true); } },
+  desc: 'Saludas con la mano como si nada... y avanzas para darle un toque en la frente que lo marea (alto).', tip: 'Agáchate cuando te salude.',
+  ai: { role: 'poke', range: [60, 200] }
+});
+
+def('handshakeHeadbutt', {
+  name: 'Apretón Sigma', cost: 20, cd: 120, startup: 12, active: 6, recovery: 30, color: '#c084fc',
+  anim: [[0, 'guard'], [10, 'offer', 'out'], [18, 'offer'], [48, 'guard']],
+  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 70, 120) },
+  on: {
+    grab(f, b, m, d) {
+      b.startLock(f, d, {
+        frames: 56, off: [t => (t < 26 ? 80 : t < 34 ? 80 - (t - 26) * 1.6 : 68), 0], tpose: t => (t < 34 ? 'offer' : 'held'),
+        anim: [[0, 'offer'], [24, 'offer'], [30, 'shakeGrip', 'out'], [34, 'headbutt', 'snap'], [44, 'headbutt'], [56, 'guard', 'inOut']],
+        // se dan la mano de verdad, tira del rival hacia sí y cabezazo
+        ...handshake(34, 24),
+        hits: [{ f: 36, dmg: 105, spark: 'heavy', fx: 'headbutt', say: 'CABEZAZO SIGMA', sayColor: '#c084fc', last: true, hitstop: 12, react: 'hurtHead' }],
+        end: { kb: [9, -6], knockdown: true }
+      });
+    },
+    end(f, b, m) { if (!m.hit) b.dealDamage(null, f, 10); }
+  },
+  desc: 'Le das la mano con educación, tiras de él y le estampas un cabezazo. Agarre: atraviesa el bloqueo.', tip: 'Salta o castígalo mientras ofrece la mano.',
+  ai: { role: 'grab', range: [0, 95] }
+});
+
+def('doubleSlap', {
+  name: 'Doble Tortazo', cost: 15, cd: 90, startup: 9, active: 14, recovery: 16, color: '#ff9f1c',
+  motion: [[9, 20, 3.6]],
+  anim: [[0, 'bigSlapW'], [9, 'bigSlap', 'snap'], [13, 'slapCross', 'out'], [17, 'backSlap', 'snap'], [23, 'backSlap'], [39, 'guard']],
+  hit: H(38, { stun: 22, kb: [0.8, 0], every: 8, maxHits: 2, box: frontBox(10, -200, 115, 80), react: 'slapped', spark: 'medium', fx: 'slap' }),
+  contacts: [{ hand: 'n', at: 'face', from: 9, to: 14, onHit: true }, { hand: 'n', at: 'face', from: 17, to: 22, onHit: true }],
+  desc: 'Tortazo de ida y revés de vuelta: dos impactos cómicos en la cara.', tip: 'Bloquéalo o agáchate (golpea alto).',
+  ai: { role: 'poke', range: [0, 110] }
+});
+
+def('mewingGlare', {
+  name: 'Mandíbula de Acero', cost: 15, cd: 180, startup: 4, active: 26, recovery: 12, color: '#9be7ff',
+  anim: [[0, 'mew'], [42, 'mew']], mods: [[0, 42, 'menacing']],
+  counter: {
+    from: 4, to: 30, types: ['strike'],
+    on(d, a, hit, src, b) {
+      // el golpe rebota en la mandíbula marcada: el atacante se duele la mano
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      a.move = null; a.setState('hitstun'); a.hitstun = 30; a.reactPose = 'shocked';
+      a.addStatus('dizzy', 40, {}, d);
+      b.dealDamage(d, a, 45);
+      d.addStatus('mewing', 180, {}, d);
+      fx(b, 'jawline', { f: d, big: true }); say(b, d, 'JAWLINE CHECK', '#9be7ff');
+      d.move.f = 30;
+      return true;
+    }
+  },
+  desc: 'Postura de mewing: si te golpean, el puño rebota en tu mandíbula, el rival se marea y tú ganas Mewing.', tip: 'Agárralo o lánzale un proyectil.',
+  ai: { role: 'counter', range: [0, 160] }
+});
+
+def('sigmaTurn', {
+  name: 'Espalda Sigma', cost: 15, cd: 200, startup: 8, active: 44, recovery: 12, color: '#c084fc',
+  anim: [[0, 'guard'], [8, 'sigmaBack', 'inOut'], [52, 'sigmaBack'], [64, 'guard', 'inOut']],
+  counter: {
+    from: 8, to: 52, types: ['strike', 'grab'],
+    on(d, a, hit, src, b) {
+      // ni te mira: aparece a su espalda y le da un codazo
+      b.teleport(d, a.x - a.facing * 70 * a.scale);
+      d.facing = a.facing;
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      a.move = null; a.setState('airhit'); a.grounded = false; a.vx = d.facing * 9; a.vy = -7; a.knockdownOnLand = true; a.y -= 1;
+      b.dealDamage(d, a, 80);
+      fx(b, 'sigmaFinish', { f: d, x: a.x, y: a.y - 100 }); say(b, d, 'NI TE MIRA', '#c084fc');
+      d.move.data.countered = true;
+      d.move.f = 52;
+      return true;
+    }
+  },
+  on: { end(f, b, m) { if (!m.data.countered) { f.gainEnergy(18); f.addStatus('cool', 240, {}, f); } } },
+  desc: 'Le das la espalda con total indiferencia: si te ataca, apareces detrás y le das un codazo; si no, ganas energía y estilo.', tip: 'Agárralo desde lejos, lánzale proyectiles o simplemente no ataques.',
+  ai: { role: 'counter', range: [0, 300] }
+});
+
+def('rizzLean', {
+  name: 'Rizz Apoyado', cost: 20, cd: 300, startup: 14, active: 30, recovery: 14, color: '#ff5fa2',
+  anim: [[0, 'guard'], [14, 'leanWall', 'out'], [44, 'leanWall'], [58, 'guard']],
+  on: {
+    frame(f, b, m, t) {
+      if (t !== 18) return;
+      fx(b, 'rizzWink', { f });
+      for (const d of b.enemiesInRange(f, 340, true, 180)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.crouching || d.isImmune('charmed')) { say(b, d, 'INMUNE AL RIZZ', '#aaaaaa', true); continue; }
+        d.addStatus('charmed', 80, {}, f); b.drain(f, d, 30, 'RIZZEADO', '#ff5fa2'); m.hit = true;
+      }
+    }
+  },
+  desc: 'Te apoyas en una pared invisible y guiñas: si te mira, queda rizzeado y camina hacia ti indefenso.', tip: 'Agáchate o date la vuelta.',
+  ai: { role: 'zone', range: [60, 330] }
+});
+
+def('menacingPose', {
+  name: 'Pose Amenazante', cost: 20, cd: 360, startup: 10, active: 40, recovery: 12, color: '#9b5de5',
+  armor: [0, 50],
+  anim: [[0, 'guard'], [10, 'menace', 'back'], [50, 'menace'], [62, 'guard']], mods: [[10, 50, 'menacing']],
+  on: {
+    frame(f, b, m, t) {
+      if (t >= 10 && t % 8 === 2) fx(b, 'menace', { f });
+      if (t !== 26) return;
+      f.gainEnergy(15);
+      for (const d of b.enemiesInRange(f, 420, true, 200)) {
+        if (Math.sign(f.x - d.x) !== d.facing || d.isImmune('fear')) continue;
+        d.addStatus('fear', 60, {}, f); b.drain(f, d, 25, 'ゴゴゴゴ', '#9b5de5'); m.hit = true;
+      }
+    }
+  },
+  desc: 'Pose de manga con ゴゴゴゴ: súper armadura, energía, y quien te mire se asusta y pierde aura.', tip: 'Agárralo: la armadura no para los agarres.',
+  ai: { role: 'buff', range: [100, 420] }
+});
+
+def('tralalero', {
+  name: 'Tralalero Tralala', cost: 25, cd: 180, startup: 16, active: 2, recovery: 18, color: '#4cc9f0',
+  anim: [[0, 'sharkFin'], [14, 'sharkFin'], [16, 'point', 'snap'], [36, 'guard']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'tralalero', { f });
+      b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 9.5, w: 110, h: 64, life: 110, maxHits: 1,
+        hit: H(70, { stun: 20, kb: [6, -9], knockdown: true, fx: 'chomp', spark: 'heavy', react: 'hurtGut' }), src: 'tralalero', staleK: m.staleK });
+    }
+  },
+  desc: 'Invocas al tiburón con zapatillas: corre por el suelo y muerde (70, derriba).', tip: 'Sáltalo o recíbelo bloqueando.',
+  ai: { role: 'zone', range: [180, 1400] }
+});
+
+def('brrPatapim', {
+  name: 'Brr Brr Patapim', cost: 25, cd: 300, startup: 14, active: 1, recovery: 22, color: '#6b8e23',
+  anim: [[0, 'guard'], [14, 'treeArms', 'back'], [37, 'treeArms']], mods: [[14, 37, 'tremble']],
+  on: {
+    active(f, b, m) {
+      const d = b.targetFor(f); if (!d) return;
+      fx(b, 'patapim', { f });
+      b.spawnProjectile(f, { kind: 'roots', x: d.x, y: GROUND_Y - 40, absVx: true, vx: 0, w: 120, h: 90, life: 14, delay: 34, track: d, trackFor: 20, pierce: true, clash: false,
+        hit: H(30, { stun: 20, kb: [0, 0], height: 'low', status: { id: 'patapim', frames: 100 }, react: 'scared' }), src: 'brrPatapim', staleK: m.staleK });
+    }
+  },
+  desc: 'El árbol con pies: unas raíces brotan bajo el rival y lo dejan clavado al suelo casi 2 segundos.', tip: 'Cuando veas la marca, salta o haz dash.',
+  ai: { role: 'zone', range: [150, 1500] }
+});
+
+def('liriliLarila', {
+  name: 'Lirilì Larilà', cost: 25, cd: 360, startup: 18, active: 1, recovery: 16, color: '#a7c957',
+  anim: [[0, 'guard'], [18, 'clockArms', 'back'], [35, 'clockArms']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'lirili', { f });
+      for (const d of b.enemiesInRange(f, 320, false, 220)) {
+        d.addStatus('lirili', 180, {}, f); b.dealDamage(f, d, 25); m.hit = true;
+        b.emit('callout', { f: d, text: 'TIEMPO LENTO', color: '#a7c957', small: true });
+      }
+    }
+  },
+  desc: 'El elefante-cactus del reloj: ralentiza a los rivales cercanos (velocidad y energía) durante 3 s y los pincha.', tip: 'Mantén la distancia cuando lo prepare.',
+  ai: { role: 'zone', range: [0, 300] }
+});
+
+def('ballerinaCappuccina', {
+  name: 'Ballerina Cappuccina', cost: 20, cd: 150, startup: 8, active: 30, recovery: 16, color: '#ffb6c1',
+  invuln: [1, 8], invulnType: 'strike', motion: [[8, 38, 9]],
+  anim: [[0, 'armsUp'], [8, 'pirouette'], [38, 'pirouette'], [44, 'arabesque', 'out'], [54, 'guard']], mods: [[8, 38, 'pirouette']],
+  hit: H(18, { stun: 14, kb: [2, -2], every: 8, maxHits: 4, box: { around: true, w: 120, h: 170, y: 0 }, spark: 'light', fx: 'coffee' }),
+  desc: 'Bailarina con cabeza de capuchino: cruza el escenario en piruetas que golpean 4 veces. Invulnerable al empezar.', tip: 'Bloquéala y castiga el arabesque final.',
+  ai: { role: 'approach', range: [80, 330] }
+});
+
+def('shoulderBrush', {
+  name: 'Quitarse el Polvo', cost: 0, cd: 300, startup: 6, active: 30, recovery: 8, taunt: true, fragile: true, color: '#e0e0e0',
+  anim: [[0, 'guard'], [6, 'brushShoulder'], [36, 'brushShoulder'], [44, 'guard']], mods: [[6, 36, 'brush']],
+  on: {
+    active(f, b, m) {
+      if (m.data.interrupted) return;
+      for (const id of ['tilted', 'mogged', 'fear', 'ratio', 'dizzy']) f.removeStatus(id);
+      f.heal(60); fx(b, 'brushOff', { f }); say(b, f, 'NI ME HA DOLIDO', '#e0e0e0', true);
+      for (const d of b.enemiesInRange(f, 300, false, 200)) if (b.isVulnerableForHumiliation(d) && b.drain(f, d, 25, 'IRRELEVANTE', '#e0e0e0')) m.hit = true;
+    }
+  },
+  desc: 'Te sacudes el hombro con desprecio: limpias estados negativos y recuperas 60 de aura. Humilla a rivales derribados.', tip: 'Es frágil: golpéalo mientras lo hace.',
+  ai: { role: 'humiliate', range: [250, 2000] }
+});
+
+def('defaultDance', {
+  name: 'Baile Default', cost: 0, cd: 400, startup: 6, active: 60, recovery: 8, taunt: true, fragile: true, color: '#50fa7b',
+  anim: [[0, 'guard'], [6, 'danced'], [66, 'danced'], [74, 'guard']], mods: [[6, 66, 'defaultDance']],
+  on: {
+    frame(f, b, m, t) {
+      if (t % 12 === 6) fx(b, 'notes', { f });
+      if (t !== 66 || m.data.interrupted) return;
+      f.gainEnergy(35);
+      for (const d of b.enemiesInRange(f, 420, false, 250)) if (b.isVulnerableForHumiliation(d) && b.drain(f, d, 45, 'BAILADO', '#50fa7b')) m.hit = true;
+    }
+  },
+  desc: 'El baile por defecto, entero: si nadie te interrumpe, +35 de energía y humillas a los rivales en el suelo.', tip: 'Castígalo: deja todo el cuerpo abierto.',
+  ai: { role: 'humiliate', range: [300, 2000] }
+});
+
+def('headPalm', {
+  name: 'Tranquilo, Fiera', cost: 15, cd: 180, startup: 3, active: 22, recovery: 14, color: '#ffd166',
+  anim: [[0, 'holdUp'], [25, 'holdUp'], [39, 'guard']],
+  counter: {
+    from: 3, to: 25, types: ['strike'],
+    on(d, a, hit, src, b) {
+      // le sujeta la cabeza con la palma: el rival da molinetes al aire sin llegar
+      if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true);
+      d.move.f = d.move.def.startup + 2;
+      b.startLock(d, a, {
+        frames: 64, off: [74, 0], tpose: t => (Math.floor(t / 5) % 2 ? 'windmillA' : 'windmillB'),
+        anim: [[0, 'headPalm'], [54, 'headPalm'], [58, 'dapW', 'snap'], [64, 'dap', 'snap']],
+        hands: (aa, tt, fr) => { if (fr > 56) return null; const j = tt.joints; return { n: { x: j.headX - aa.facing * j.headR * 0.6, y: j.headY - j.headR * 0.55, w: Math.min(1, fr / 3) } }; },
+        frame: (ff, bb, mm, t, tt) => { if (t % 10 === 5) bb.emit('fx', { name: 'whiff', f: tt }); },
+        hits: [{ f: 30, dmg: 0, drain: 40, say: 'TRANQUILO, FIERA', sayColor: '#ffd166' }, { f: 62, dmg: 55, spark: 'heavy', fx: 'slap', last: true, react: 'hurtGut' }],
+        end: { kb: [10, -5], knockdown: true }
+      });
+      return true;
+    }
+  },
+  desc: 'Contra: le pones la palma en la frente y el rival da molinetes al aire sin alcanzarte. Luego lo empujas.', tip: 'Agárralo, usa un proyectil o espera a que termine.',
+  ai: { role: 'counter', range: [0, 130] }
+});
+
+def('brainrotInvasion', {
+  ...ULT, name: 'Invasión Brainrot', startup: 24, active: 30, recovery: 24, color: '#4cc9f0',
+  anim: [[0, 'sharkFin'], [20, 'sharkFin'], [24, 'point', 'snap'], [54, 'point']],
+  on: {
+    active(f, b, m) {
+      fx(b, 'tralalero', { f, big: true });
+      b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 14, w: 140, h: 80, life: 90, maxHits: 1, scale: 1.4,
+        hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'brainrotInvasion',
+        onHit: (bb, p, dd) => {
+          if (!f.move || f.move.def.id !== 'brainrotInvasion' || f.move.lock) return;
+          p.dead = true;
+          bb.startLock(f, dd, {
+            frames: 150, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
+            anim: [[0, 'point'], [40, 'conduct'], [150, 'conduct']], mods: [[40, 150, 'conduct']],
+            frame: (ff, b2, mm, t, tt) => {
+              if (t === 2) b2.emit('fx', { name: 'brainrot', step: 'shark', f: tt, a: ff });
+              if (t === 40) b2.emit('fx', { name: 'brainrot', step: 'plane', f: tt, a: ff });
+              if (t === 80) b2.emit('fx', { name: 'brainrot', step: 'tung', f: tt, a: ff });
+              if (t === 112) b2.emit('fx', { name: 'brainrot', step: 'ballerina', f: tt, a: ff });
+            },
+            hits: [{ f: 6, dmg: 50, spark: 'heavy', fx: 'chomp' }, { f: 56, dmg: 30, spark: 'heavy', fx: 'boom' }, { f: 64, dmg: 30, spark: 'heavy', fx: 'boom' }, { f: 72, dmg: 30, spark: 'heavy', fx: 'boom' },
+              { f: 90, dmg: 40, spark: 'heavy', fx: 'tung' }, { f: 98, dmg: 40, spark: 'heavy', fx: 'tung' }, { f: 132, dmg: 90, spark: 'mega', fx: 'coffee', say: 'BRAINROT TOTAL', sayColor: '#4cc9f0', last: true, hitstop: 18 }],
+            end: { kb: [10, -11], knockdown: true }
+          });
+        } });
+    }
+  },
+  desc: 'El tiburón con zapatillas abre paso; si muerde, llegan el cocodrilo bombardero, Tung Tung Sahur y la bailarina capuchino (≈310).', tip: 'Salta al tiburón inicial.',
+  ai: { role: 'ult', range: [0, 1300] }
+});
+
+def('mainCharacterEnding', {
+  ...ULT, name: 'Final de Protagonista', startup: 20, active: 40, recovery: 20, color: '#ffe066',
+  anim: [[0, 'pockets'], [60, 'pockets']],
+  on: {
+    frame(f, b, m, t) {
+      if (t !== 20) return;
+      const d = b.targetFor(f); if (!d) return;
+      b.spawnProjectile(f, { kind: 'none', x: d.x, y: GROUND_Y - 100, absVx: true, vx: 0, w: 120, h: 200, life: 10, delay: 26, track: d, trackFor: 20, pierce: true, clash: false,
+        hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'mainCharacterEnding',
+        onHit: (bb, p, dd) => {
+          if (!f.move || f.move.def.id !== 'mainCharacterEnding' || f.move.lock) return;
+          f.addStatus('cool', 300, {}, f);
+          bb.startLock(f, dd, {
+            // el protagonista se aleja sin mirar mientras todo explota a su espalda
+            frames: 130, off: [t => Math.max(80, (dd.x - f.x) * f.facing / f.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
+            anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [130, 'walkAway']],
+            frame: (ff, b2, mm, t, tt) => {
+              if (t > 14 && t < 100) ff.x -= ff.facing * 2.2;
+              if (t === 20) b2.emit('fx', { name: 'credits', f: ff });
+              if (t === 92) b2.emit('fx', { name: 'explosion', x: tt.x, y: tt.y - 80, big: true });
+            },
+            hits: [{ f: 40, dmg: 20, spark: 'light' }, { f: 92, dmg: 240, spark: 'mega', fx: 'boom', say: 'COOL GUYS DON\'T LOOK AT EXPLOSIONS', sayColor: '#ffe066', last: true, hitstop: 20 }],
+            end: { kb: [7, -12], knockdown: true }
+          });
+        } });
+    }
+  },
+  desc: 'Marcas al rival con un foco, te pones las gafas y te alejas sin mirar mientras explota a tu espalda (≈260).', tip: 'Cuando aparezca el foco, sal con dash.',
+  ai: { role: 'ult', range: [0, 2000] }
+});
+
+// Contactos automáticos: los movimientos de bofetada/palmada llevan la mano a la cara (o al pecho) al conectar.
+for (const m of Object.values(MOVES)) {
+  if (m.contacts || !m.anim) continue;
+  const end = m.startup + m.active + 3;
+  const has = n => m.anim.some(k => k[1] === n);
+  if (has('slap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
+  else if (has('dap') || has('bonk')) m.contacts = [{ hand: 'n', at: has('bonk') ? 'top' : 'chest', from: m.startup, to: end, onHit: true }];
+  else if (has('clap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
+}
+
 export const BASIC_IDS = Object.values(MOVES).filter(m => m.slot === 'basic').map(m => m.id);
 export const SPECIAL_IDS = Object.values(MOVES).filter(m => m.slot === 'special').map(m => m.id);
 export const ULT_IDS = Object.values(MOVES).filter(m => m.slot === 'ult').map(m => m.id);

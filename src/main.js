@@ -18,8 +18,11 @@ import { HUDScene } from './scenes/HUDScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { ResultScene } from './scenes/ResultScene.js';
 import { MoveListScene } from './scenes/MoveListScene.js';
+import { ControlsScene } from './scenes/ControlsScene.js';
+import { LocalSetupScene } from './scenes/LocalSetupScene.js';
 import { Audio } from './core/Audio.js';
 import { Save } from './core/Save.js';
+import { quickOpponents } from './core/Match.js';
 
 const config = {
   type: Phaser.WEBGL,
@@ -31,7 +34,7 @@ const config = {
   render: { antialias: true, powerPreference: 'high-performance' },
   fps: { target: 60, smoothStep: true },
   input: { keyboard: false, gamepad: false },
-  scene: [BootScene, DemoScene, MenuScene, PlayScene, PathScene, CustomScene, CharacterScene, PrestigeScene, SettingsScene, VersusScene, FightScene, HUDScene, PauseScene, ResultScene, MoveListScene]
+  scene: [BootScene, DemoScene, MenuScene, PlayScene, PathScene, CustomScene, CharacterScene, PrestigeScene, SettingsScene, VersusScene, FightScene, HUDScene, PauseScene, ResultScene, MoveListScene, ControlsScene, LocalSetupScene]
 };
 
 // Espera a que las fuentes locales estén listas antes de crear textos
@@ -41,5 +44,5 @@ Promise.race([
   new Promise(r => setTimeout(r, 2500))
 ]).finally(() => {
   window.game = new Phaser.Game(config);
-  window.__AURA = { Audio, Save }; // acceso para depuración desde la consola
+  window.__AURA = { Audio, Save, quickOpponents }; // acceso para depuración desde la consola
 });

@@ -15,6 +15,8 @@ export class ResultScene extends Phaser.Scene {
     this.apText = null; this.rankBar = null; this.rpText = null;
     const { spec, result, info, rewards } = this.data2;
     this.bg = new MenuBG(this);
+    this.prevB = null;
+    if (spec.mode === 'versus') { this.createVersus(spec, result, info); return; }
     const win = result && result.win && spec.mode !== 'survival';
     const surv = spec.mode === 'survival';
     const training = spec.mode === 'training';
@@ -89,6 +91,45 @@ export class ResultScene extends Phaser.Scene {
     fadeIn(this);
     if (win) for (let i = 0; i < 4; i++) this.time.delayedCall(i * 300, () => this.confetti());
   }
+  // Resultado del multijugador local: ganador, marcador de la sesión y estadísticas comparadas
+  createVersus(spec, result, info) {
+    Audio.music('results');
+    const w = info.winner, cols = ['#7df9ff', '#ff5fa2'];
+    const profs = [spec.p1.profile, spec.p2.profile];
+    const t = txt(this, 640, 64, `¡GANA EL JUGADOR ${w + 1}!`, 78, cols[w], { ox: 0.5, oy: 0.5, strokeThickness: 10 });
+    t.setShadow(0, 0, cols[w], 30, true, true).setScale(2).setAlpha(0);
+    this.tweens.add({ targets: t, scale: 1, alpha: 1, duration: 350, ease: 'Back.easeOut' });
+    txt(this, 640, 116, info.names[w] + (result.rounds ? `  ·  rondas ${result.rounds[0]} – ${result.rounds[1]}` : ''), 22, '#ffffff', { ox: 0.5, oy: 0.5 });
+    const loserAnim = ['kneel', 'slump', 'rage', 'shrug'][Math.floor(Math.random() * 4)];
+    this.prev = new StickPreview(this, 170, 600, profs[0], { scale: 2.2, facing: 1, anim: w === 0 ? (profs[0].celebration || 'flex') : loserAnim, glow: w === 0 ? 1.4 : 0.3 });
+    this.prevB = new StickPreview(this, 1110, 600, profs[1], { scale: 2.2, facing: -1, anim: w === 1 ? (profs[1].celebration || 'flex') : loserAnim, glow: w === 1 ? 1.4 : 0.3 });
+    txt(this, 170, 630, 'J1 · ' + info.names[0], 22, cols[0], { ox: 0.5 });
+    txt(this, 1110, 630, 'J2 · ' + info.names[1], 22, cols[1], { ox: 0.5 });
+    // marcador de la sesión
+    const sc = spec.score || [0, 0];
+    panel(this, 390, 150, 500, 380, { alpha: 0.88 });
+    txt(this, 640, 172, 'MARCADOR DE LA SESIÓN', 20, '#c9c3e6', { ox: 0.5 });
+    const s1 = txt(this, 560, 230, String(sc[0]), 64, cols[0], { ox: 0.5, oy: 0.5 }), s2 = txt(this, 720, 230, String(sc[1]), 64, cols[1], { ox: 0.5, oy: 0.5 });
+    txt(this, 640, 230, '–', 50, '#ffffff', { ox: 0.5, oy: 0.5 });
+    (w === 0 ? s1 : s2).setScale(1.6); this.tweens.add({ targets: w === 0 ? s1 : s2, scale: 1, duration: 400, delay: 300, ease: 'Bounce.easeOut' });
+    const st = info.stats;
+    const rows = [['Daño de aura', x => Math.round(x.dmg || 0)], ['Golpes', x => x.hits || 0], ['Combo máximo', x => x.maxCombo || 0], ['Parries', x => x.parries || 0], ['Especiales', x => x.specials || 0], ['Ultimates', x => x.ults || 0], ['Esquivas', x => x.dodges || 0]];
+    rows.forEach(([k, f], i) => {
+      const a = f(st[0]), b = f(st[1]), y = 290 + i * 32;
+      txt(this, 640, y, k, 17, '#9a94b8', { ox: 0.5, body: true });
+      txt(this, 430, y, String(a), 20, a > b ? cols[0] : '#ffffff', {});
+      txt(this, 850, y, String(b), 20, b > a ? cols[1] : '#ffffff', { ox: 1 });
+    });
+    const items = [
+      { label: 'REVANCHA INSTANTÁNEA', color: '#ffd166', onSelect: () => go(this, 'Fight', { spec }) },
+      { label: 'CAMBIAR PERSONAJES', onSelect: () => go(this, 'LocalSetup') },
+      { label: 'MENÚ PRINCIPAL', onSelect: () => go(this, 'Menu') }
+    ];
+    this.menu = new MenuList(this, 450, 548, items, { w: 380, h: 42, gap: 6, size: 22 });
+    keyHints(this, '↑↓ elegir · ENTER confirmar');
+    fadeIn(this);
+    for (let i = 0; i < 4; i++) this.time.delayedCall(i * 300, () => this.confetti());
+  }
   toStage(s) {
     const enemies = s.enemies.map(botById);
     go(this, 'Versus', { spec: { mode: 'path', stageId: s.id, enemies, rounds: s.rounds, arena: s.arena, boss: !!s.boss, pathTitle: s.title } });
@@ -101,6 +142,7 @@ export class ResultScene extends Phaser.Scene {
     Input.pollPad();
     this.bg.update();
     this.prev.update();
+    if (this.prevB) this.prevB.update();
     this.menu.update();
     if (this.apText && this.apCur < this.apTarget) {
       this.apCur = Math.min(this.apTarget, this.apCur + Math.max(1, Math.ceil(this.apTarget / 60)));

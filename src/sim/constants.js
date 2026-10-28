@@ -11,6 +11,7 @@ export const MAX_ENERGY = 100;
 
 export const WALK_SPEED = 4.4;
 export const BACK_SPEED = 3.4;
+export const RUN_SPEED = 8.4;
 export const JUMP_VY = -16.2;
 export const JUMP_VX = 5.2;
 export const DASH_FRAMES = 14;

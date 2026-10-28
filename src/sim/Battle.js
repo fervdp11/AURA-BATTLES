@@ -1,5 +1,6 @@
 import { GROUND_Y, WALL_L, WALL_R, MAX_ENERGY, JUGGLE_LIMIT, COMBO_HIT_LIMIT, ARENA_W } from './constants.js';
 import { Fighter } from './Fighter.js';
+import { bodySurface, shiftJoints } from './skeleton.js';
 import { MOVES } from './moves.js';
 import { STATUS } from './status.js';
 import { emptyInput } from './constants.js';
@@ -125,6 +126,9 @@ export class Battle {
       f.update();
     }
     this.pushApart();
+    for (const f of this.fighters) if (!this.timeStopFor(f)) f.solve(true);
+    this.separateBodies();
+    this.resolveContacts();
     this.updateProjectiles();
     this.detectHits();
     this.tickTokens();
@@ -183,6 +187,8 @@ export class Battle {
       return;
     }
     if (this.phase === 'over') {
+      // el perdedor se levanta del suelo y encaja la derrota (arrodillado, hundido, rabieta o encogerse de hombros)
+      if (this.phaseT === 60) for (const f of this.fighters) if (f.team !== this.winnerTeam && !f.decoyOf && f.grounded && (f.state === 'ko' || f.state === 'knockdown')) this.setDefeat(f);
       if (this.phaseT === 200) this.emit('matchEnd', { result: this.result });
     }
   }
@@ -214,6 +220,13 @@ export class Battle {
     }
   }
 
+  setDefeat(f) {
+    const list = ['kneel', 'slump', 'rage', 'shrug'];
+    f.defeatAnim = list[(f.id * 7 + this.round) % list.length];
+    f.move = null; f.vx = 0;
+    f.setState('lose');
+  }
+
   endRound(reason) {
     if (this.phase !== 'fight') return;
     // por tiempo: gana el equipo con más aura relativa
@@ -221,7 +234,8 @@ export class Battle {
     const s0 = score(0), s1 = score(1);
     const loserTeam = s0 >= s1 ? 1 : 0;
     this.emit('announce', { text: '¡TIEMPO!', time: true });
-    for (const f of this.fighters) if (f.team === loserTeam && f.alive) { f.aura = 0; f.alive = false; f.setState('ko'); }
+    // por tiempo nadie sale volando: el perdedor se queda de pie y encaja la derrota
+    for (const f of this.fighters) if (f.team === loserTeam && f.alive) { f.aura = 0; f.alive = false; f.move = null; this.setDefeat(f); }
     this.lastKO = { f: this.fighters.find(f => f.team === loserTeam), attacker: null, final: true, time: true };
     this.phase = 'ko'; this.phaseT = 0;
     void reason;
@@ -243,7 +257,8 @@ export class Battle {
       this.emit('victory', { team: winner, result: this.result });
     } else {
       this.phase = 'roundEnd'; this.phaseT = 0;
-      this.emit('announce', { text: winner === this.player.team ? 'RONDA GANADA' : 'RONDA PERDIDA' });
+      if (this.opts.versus) { const w = this.fighters.find(f => f.team === winner); this.emit('announce', { text: `RONDA PARA J${winner + 1}`, sub2: w ? w.name : '' }); }
+      else this.emit('announce', { text: winner === this.player.team ? 'RONDA GANADA' : 'RONDA PERDIDA' });
     }
   }
 
@@ -252,6 +267,8 @@ export class Battle {
     this.timer = this.timerMax;
     this.projectiles.length = 0;
     this.timeStop = null; this.domain = null;
+    // los señuelos (clones) no sobreviven al cambio de ronda
+    this.fighters = this.fighters.filter(f => !f.decoyOf);
     for (const f of this.fighters) {
       f.alive = true; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
       f.status.length = 0; f.move = null; f.grounded = true; f.facing = f.team === 0 ? 1 : -1;
@@ -278,6 +295,27 @@ export class Battle {
     return f;
   }
 
+  // Contacto físico: ninguna mano ni pie atraviesa el cuerpo de un rival (se apoya en su superficie)
+  resolveContacts() {
+    const fs = this.fighters;
+    for (const a of fs) {
+      if (!a.alive || !a.visible || a.state === 'knockdown' || a.state === 'ko') continue;
+      let hands = null, feet = null;
+      for (const d of fs) {
+        if (d === a || d.team === a.team || !d.alive || !d.visible || d.decoyOf) continue;
+        if (Math.abs(d.x - a.x) > 200 * Math.max(a.scale, d.scale)) continue;
+        const dir = Math.sign(d.x - a.x) || a.facing;
+        for (const k of ['n', 'f']) {
+          const hs = bodySurface(d.joints, a.joints[k + 'HandX'], a.joints[k + 'HandY'], dir);
+          if (hs.inside) { hands = hands || {}; hands[k] = [hs.x, hs.y]; }
+          const fsf = bodySurface(d.joints, a.joints[k + 'FootX'], a.joints[k + 'FootY'], dir);
+          if (fsf.inside && (a.move || !a.grounded)) { feet = feet || {}; feet[k] = [fsf.x, fsf.y]; }
+        }
+      }
+      if (hands || feet) a.resolveWith(hands || {}, feet || {});
+    }
+  }
+
   // ---------------- colisiones entre cuerpos ----------------
   pushApart() {
     const fs = this.fighters;
@@ -301,6 +339,45 @@ export class Battle {
           if (c.x > WALL_R) { a.x -= c.x - WALL_R; c.x = WALL_R; }
           if (c.x < WALL_L) { a.x += WALL_L - c.x; c.x = WALL_L; }
           if (a.x > WALL_R) { c.x -= a.x - WALL_R; a.x = WALL_R; }
+        }
+      }
+    }
+  }
+
+  // solapamiento horizontal entre el frente del cuerpo de L (a la izquierda) y la espalda de R (articulaciones actuales)
+  bodyOverlap(L, R) {
+    const a = L.joints, b = R.joints;
+    const ra = 9 * L.scale, rb = 9 * R.scale;
+    // solo si las cabezas/torsos coinciden en altura
+    if (Math.min(a.hipY, a.headY) > Math.max(b.hipY, b.headY) + 20 || Math.min(b.hipY, b.headY) > Math.max(a.hipY, a.headY) + 20) return 0;
+    const front = Math.max(a.headX + a.headR * 0.95, a.neckX + ra, a.hipX + ra);
+    const back = Math.min(b.headX - b.headR * 0.95, b.neckX - rb, b.hipX - rb);
+    return front - back;
+  }
+
+  // Tras resolver las poses: torsos y cabezas inclinados no se atraviesan (se empujan ambos, también los pies apoyados)
+  separateBodies() {
+    const fs = this.fighters;
+    for (let i = 0; i < fs.length; i++) {
+      const a = fs[i];
+      if (!a.alive || a.state === 'locked' || a.state === 'knockdown' || a.decoyOf || a.joints.headX === undefined) continue;
+      for (let j = i + 1; j < fs.length; j++) {
+        const c = fs[j];
+        if (!c.alive || c.state === 'locked' || c.state === 'knockdown' || c.decoyOf || c.joints.headX === undefined) continue;
+        if ((a.invuln > 0 && a.move && a.move.def.passThrough) || (c.invuln > 0 && c.move && c.move.def.passThrough)) continue;
+        if (a.team === c.team && fs.length > 2) continue;
+        const L = a.x <= c.x ? a : c, R = L === a ? c : a;
+        const ov = this.bodyOverlap(L, R);
+        if (ov <= 1) continue;
+        const push = Math.min(ov, 30) / 2;
+        let pl = push, pr = push;
+        if (L.x - pl < WALL_L) { pr += pl - (L.x - WALL_L); pl = L.x - WALL_L; }
+        if (R.x + pr > WALL_R) { pl += pr - (WALL_R - R.x); pr = WALL_R - R.x; }
+        for (const [f, d] of [[L, -Math.max(0, pl)], [R, Math.max(0, pr)]]) {
+          if (!d) continue;
+          f.x += d; shiftJoints(f.joints, d, 0);
+          for (const k of ['n', 'f']) { const ft = f.feet[k]; ft.x += d; if (ft.step) { ft.step.fromX += d; ft.step.toX += d; } }
+          if (f.hurt) f.hurt.x += d;
         }
       }
     }
@@ -500,6 +577,18 @@ export class Battle {
     d.hitSeq = (d.hitSeq || 0) + 1;
     d.flash = 5; d.hitFlashColor = 0xffffff;
     const dirX = Math.sign(d.x - (isProj ? src.p.x - src.p.vx : a.x)) || a.facing;
+    // reacción específica según la zona golpeada y el tipo de ataque
+    {
+      const hy = isProj ? src.p.y : (a.lastBox ? a.lastBox.y + a.lastBox.h / 2 : d.y - 100);
+      const j = d.joints;
+      const fromBehind = Math.sign(isProj ? src.p.x - d.x : a.x - d.x) !== d.facing;
+      let r = hit.react;
+      if (!r) r = hit.height === 'low' ? 'hurtLow' : hy < j.neckY + 6 * d.scale ? 'hurtHead' : (hit.dmg || 0) >= 50 ? 'hurtGut' : 'hurt';
+      if (fromBehind && r !== 'flattened' && r !== 'shocked') r = 'hurtGut';
+      d.reactSpin = r === 'spin';
+      d.reactPose = r === 'spin' ? 'hurt' : r;
+      d.kdFace = fromBehind || r === 'flattened';
+    }
     const kb = hit.kb || [3, 0];
     const juggled = d.juggle >= JUGGLE_LIMIT || d.comboTaken > COMBO_HIT_LIMIT;
     const airborne = !d.grounded || (kb[1] < -2) || hit.launch;
@@ -520,6 +609,7 @@ export class Battle {
     } else {
       d.setState('hitstun');
       d.hitstun = Math.round((hit.stun || 16) * (counterHit ? 1.25 : 1));
+      d.hitstunMax = d.hitstun;
       d.vx = dirX * kb[0];
     }
     d.squashX = 0.88; d.squashY = 1.1;
@@ -609,6 +699,17 @@ export class Battle {
     let dmg = (h.dmg || 0) * a.dmgMult() * d.defMult() * (move.data.cooked ? 1.5 : 1) * (move.staleK || 1);
     this.dealDamage(a, d, dmg, { noKO: true });
     if (d.aura <= 0) { d.aura = 1; if (move.lock) move.lock.lethal = true; }
+    if (move.lock) {
+      // la reacción depende de dónde impacta de verdad la mano/pie del atacante
+      let r = h.react;
+      if (!r) {
+        const ja = a.joints, jd = d.joints;
+        const ys = [ja.nHandY, ja.fHandY].filter((y, i) => Math.abs((i ? ja.fHandX : ja.nHandX) - jd.neckX) < 40 * d.scale);
+        const hy = ys.length ? Math.min(...ys) : jd.neckY + 20;
+        r = hy < jd.neckY + 6 * d.scale ? 'hurtHead' : dmg > 60 ? 'hurtGut' : 'hurt';
+      }
+      d.lockReact = { pose: r, until: move.lock.f + (h.reactFrames || 8) };
+    }
     a.combo.hits++; a.combo.dmg += dmg; a.combo.t = 90;
     if (a.combo.hits > a.stats.maxCombo) a.stats.maxCombo = a.combo.hits;
     a.gainEnergy(dmg * 0.06);
@@ -617,10 +718,17 @@ export class Battle {
     this.hitstop = Math.max(this.hitstop, h.hitstop ?? 3);
     this.emit('hit', { a, f: d, x: d.x, y: d.y - 100 * d.scale, dmg, strength: h.spark || (dmg > 60 ? 'heavy' : 'light'), combo: a.combo.hits, move: move.def.id, color: h.color, fx: h.fx, lock: true });
     if (h.say) this.emit('callout', { f: a, text: h.say, color: h.sayColor || '#ffffff' });
+    if (h.drain && !d.isImmune('humiliate')) {
+      this.dealDamage(a, d, h.drain * a.dmgMult() * d.defMult(), { drain: true, noKO: true });
+      a.stats.humiliations++;
+      this.emit('humiliate', { a, f: d, text: h.say || 'HUMILLADO', color: h.sayColor || '#ff66cc', amount: h.drain });
+      if (d.aura <= 0) { d.aura = 1; if (move.lock) move.lock.lethal = true; }
+    }
   }
 
   releaseLock(a, L, broken) {
     const d = L.target;
+    if (d) { d.contactHands = null; d.lockReact = null; }
     if (!d || d.state !== 'locked') { if (a.move && a.move.lock === L) a.move.lock = null; return; }
     d.lockedBy = null;
     const end = L.spec.end || { kb: [6, -6], knockdown: true };

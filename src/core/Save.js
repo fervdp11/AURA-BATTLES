@@ -14,7 +14,7 @@ function defaults() {
     path: { cleared: {} }, pathChapters: 0,
     achievements: {},
     lastLevel: 1,
-    settings: { music: 0.55, sfx: 0.8, voice: true, shake: 1, damageNumbers: true, showFps: false, hitboxes: false, bindings: null, quality: 'alta', announcer: true }
+    settings: { music: 0.55, sfx: 0.8, shake: 1, damageNumbers: true, showFps: false, hitboxes: false, bindings: null, bindingsP1: null, bindingsP2: null, quality: 'alta' }
   };
 }
 
