@@ -116,6 +116,19 @@ export class BattleView {
       if (f.state === 'attack' && f.move && f.move.def.slot === 'ult') glow += 0.8;
       if (f.boss) glow += 0.3;
       if (f.auraPct < 0.25 && f.alive) glow *= 0.5 + Math.random() * 0.5;
+      // llamas de aura con la ultimate cargada o buffs fuertes
+      if (f.alive && (f.energy >= 100 || glow > 1.2)) {
+        const ac = look.auraFn ? look.auraFn(this.t) : look.aura;
+        const j = f.joints;
+        for (let i = 0; i < 7; i++) {
+          const ph = this.t * 0.22 + i * 1.7;
+          const bx = j.hipX + (i - 3) * 9 * f.scale, by = j.hipY + 30 * f.scale - Math.abs(i - 3) * 6;
+          const h = (70 + Math.sin(ph) * 25 + (i % 2) * 20) * f.scale;
+          const sway = Math.sin(ph * 0.7) * 10 * f.scale;
+          gg.fillStyle(ac, 0.13);
+          gg.fillTriangle(bx - 12 * f.scale, by, bx + 12 * f.scale, by, bx + sway, by - h);
+        }
+      }
       // partículas de aura
       if (f.alive && Math.random() < 0.12 + glow * 0.25) this.fx.motes(f.joints.hipX, f.joints.hipY - 20 * f.scale, look.auraFn ? look.auraFn(this.t) : look.aura, 1, 40 * f.scale);
       const flashK = f.flash > 0 ? Math.min(1, f.flash / 4) : 0;

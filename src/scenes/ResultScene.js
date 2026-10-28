@@ -12,6 +12,7 @@ export class ResultScene extends Phaser.Scene {
   constructor() { super('Result'); }
   init(data) { this.data2 = data; }
   create() {
+    this.apText = null; this.rankBar = null; this.rpText = null;
     const { spec, result, info, rewards } = this.data2;
     this.bg = new MenuBG(this);
     const win = result && result.win && spec.mode !== 'survival';
@@ -38,6 +39,10 @@ export class ResultScene extends Phaser.Scene {
     t.setShadow(0, 0, col, 30, true, true).setScale(2).setAlpha(0);
     this.tweens.add({ targets: t, scale: 1, alpha: 1, duration: 350, ease: 'Back.easeOut' });
     const prof = playerProfile();
+    if (!win && !surv && !training && spec.enemies && spec.enemies[0]) {
+      const bot = spec.enemies[0];
+      txt(this, 640, 128, `${bot.name}: "${bot.quote}"`, 18, '#ff9fb0', { ox: 0.5, body: true, wrap: 900, align: 'center' });
+    }
     this.prev = new StickPreview(this, 250, 600, prof, { scale: 2.4, anim: win || surv ? (prof.celebration || 'flex') : 'dizzy', glow: win ? 1.4 : 0.4 });
     // estadísticas
     panel(this, 480, 150, 360, 370, { alpha: 0.85 });

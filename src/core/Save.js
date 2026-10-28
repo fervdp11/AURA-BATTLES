@@ -69,6 +69,7 @@ class SaveManager {
     s.ults += st.ults || 0;
     s.specials += st.specials || 0;
     s.charms += info.charms || 0;
+    s.kos += info.kos || 0;
     s.playFrames += info.frames || 0;
     d.rankPoints = Math.max(0, d.rankPoints + r.rp);
     d.ap += r.ap;

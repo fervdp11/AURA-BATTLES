@@ -13,6 +13,8 @@ export class HUDScene extends Phaser.Scene {
   constructor() { super('HUD'); }
   init(data) { this.fight = data.fight; }
   create() {
+    // la instancia de escena se reutiliza entre combates: reinicia el estado
+    this.pills0 = []; this.pills1 = []; this.lastMove = null; this.tut = null; this.sl = null;
     const b = this.fight.battle;
     this.b = b;
     this.g = this.add.graphics();
@@ -71,7 +73,7 @@ export class HUDScene extends Phaser.Scene {
       letterbox: frames => this.letterbox(frames),
       ko: e => this.ko(e),
       bev: e => this.onBev(e),
-      wave: n => this.announce('OLEADA ' + n, '¡Vienen más!', '#ffd166')
+      wave: n => { this.texts.wave.setText('OLEADA ' + n); this.announce('OLEADA ' + n, n % 5 === 0 ? '¡JEFE!' : '¡Vienen más!', '#ffd166'); }
     };
     for (const k in this.handlers) fe.on(k, this.handlers[k]);
     this.events.once('shutdown', () => { for (const k in this.handlers) fe.off(k, this.handlers[k]); for (const p of this.portraits) p.prev.destroy(); });

@@ -9,6 +9,7 @@ import { LEVELS } from '../sim/AI.js';
 export class PrestigeScene extends Phaser.Scene {
   constructor() { super('Prestige'); }
   create() {
+    this.confirm = false;
     if (!this.scene.isActive('Demo')) this.scene.launch('Demo');
     this.scene.sendToBack('Demo');
     this.add.rectangle(640, 360, 1280, 720, 0x05030c, 0.86);
@@ -53,7 +54,7 @@ export class PrestigeScene extends Phaser.Scene {
         `Racha actual: ${s.streak} · Mejor racha: ${s.bestStreak}`,
         `Victorias perfectas: ${s.perfects} · Jefes derrotados: ${s.bosses} · Victorias 1v3: ${s.wins1v3}`,
         `Combo máximo: ${s.maxCombo} · Parries: ${s.parries} · Humillaciones: ${s.humiliations}`,
-        `Aura infligida: ${s.damage} · Especiales: ${s.specials} · Ultimates: ${s.ults}`,
+        `Aura infligida: ${s.damage} · Rivales derrotados: ${s.kos} · Especiales: ${s.specials} · Ultimates: ${s.ults}`,
         `Supervivencia: récord ${s.survivalBest} oleadas (${s.survivalRuns} partidas)`,
         `Tiempo de combate: ${Math.round(s.playFrames / 3600)} min`,
         '', 'VICTORIAS / DERROTAS POR DIFICULTAD:',

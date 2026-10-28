@@ -218,6 +218,8 @@ function hslInt(h) {
 export function go(scene, key, data) {
   if (scene._leaving) return;
   scene._leaving = true;
+  // Phaser reutiliza las instancias de escena: hay que liberar la marca al cerrarla
+  scene.events.once('shutdown', () => { scene._leaving = false; });
   Input.clearPressed();
   const cam = scene.cameras.main;
   const g = scene.add.graphics().setDepth(1000).setScrollFactor(0);

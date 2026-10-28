@@ -21,7 +21,7 @@ export class PauseScene extends Phaser.Scene {
     const training = spec.mode === 'training';
     const items = [
       { label: 'CONTINUAR', onSelect: () => this.close() },
-      { label: 'LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Pause' }); this.scene.pause(); } }
+      { label: 'LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Pause' }); this.scene.bringToTop('MoveList'); this.scene.pause(); } }
     ];
     if (training) {
       const setDummy = () => {
@@ -48,6 +48,7 @@ export class PauseScene extends Phaser.Scene {
     );
     this.menu = new MenuList(this, 420, 190, items, { w: 440, h: 40, gap: 5, size: 22, visible: 10, onBack: () => this.close() });
     keyHints(this, '↑↓ elegir · ←→ cambiar · ENTER confirmar · ESC continuar');
+    this.events.off('resume');
     this.events.on('resume', () => { this.menu.active = true; });
   }
   vol(k, d) {

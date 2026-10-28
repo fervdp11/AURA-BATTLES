@@ -41,7 +41,9 @@ export class FightScene extends Phaser.Scene {
     this.acc = 0;
     this.paused = false;
     this.ended = false;
+    this.kos = 0;
     this.wave = spec.wave || 1;
+    this.events.off('bev');
     this.events.on('bev', e => this.onBattleEvent(e));
     this.scene.launch('HUD', { fight: this });
     this.scene.bringToTop('HUD');
@@ -65,6 +67,7 @@ export class FightScene extends Phaser.Scene {
     Audio.play('ui_open');
     this.scene.pause('HUD');
     this.scene.launch('Pause', { fight: this });
+    this.scene.bringToTop('Pause');
     this.scene.pause();
   }
   resume() {
@@ -77,6 +80,7 @@ export class FightScene extends Phaser.Scene {
 
   onBattleEvent(e) {
     const b = this.battle;
+    if (e.type === 'ko' && e.attacker && e.attacker.isHuman) this.kos = (this.kos || 0) + 1;
     if (e.type === 'victory') {
       this.view.celebrate(e.team);
       Audio.music('results');
@@ -113,7 +117,7 @@ export class FightScene extends Phaser.Scene {
       mode: spec.mode, win: result.win, level: spec.levelOverride ?? Math.max(...spec.enemies.map(e => e.level)),
       enemies: spec.enemies.length, perfect: result.perfect, maxCombo: p.stats.maxCombo, humiliations: p.stats.humiliations,
       boss: spec.enemies.some(e => e.boss), stats: p.stats, frames: this.battle.frame, waves: spec.mode === 'survival' ? this.wave - 1 : 0,
-      charms: this.battle.charmsByPlayer || 0
+      charms: this.battle.charmsByPlayer || 0, kos: this.kos
     };
     if (spec.mode === 'survival') info.win = false;
     const rewards = spec.mode === 'training' ? null : Save.recordMatch(info);

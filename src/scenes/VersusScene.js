@@ -12,6 +12,7 @@ export class VersusScene extends Phaser.Scene {
   constructor() { super('Versus'); }
   init(data) { this.spec = data.spec; }
   create() {
+    this.done = false;
     if (this.scene.isActive('Demo')) this.scene.stop('Demo');
     const spec = this.spec;
     this.bg = new MenuBG(this);

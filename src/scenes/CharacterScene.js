@@ -82,7 +82,7 @@ export class CharacterScene extends Phaser.Scene {
     const lo = Save.d.loadout;
     this.setMenu([
       ...SLOTS.map(([k, name]) => ({ label: name, value: () => (MOVES[lo[k]] ? MOVES[lo[k]].name : '-'), onSelect: () => this.pickMove(k), m: MOVES[lo[k]] })),
-      { label: 'VER LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Character' }); this.scene.pause(); } },
+      { label: 'VER LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Character' }); this.scene.bringToTop('MoveList'); this.scene.pause(); } },
       { label: 'VOLVER', onSelect: () => this.root() }
     ], { onBack: () => this.root(), onChange: it => this.moveInfo(it.m || (it.label && MOVES[lo[(SLOTS.find(s => s[1] === it.label) || [])[0]]])) });
     this.events.off('resume'); this.events.on('resume', () => { if (this.menu) this.menu.active = true; });
