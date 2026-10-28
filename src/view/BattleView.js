@@ -408,7 +408,40 @@ export class BattleView {
   }
 
   // ------------------------------------------------------------
+  // Cámara cinemática del remate: planos cortados (primerísimo plano, contrapicado inclinado, plano final),
+  // ángulo holandés, zoom extremo, cámara en mano y franjas de cine. Termina restaurando la cámara normal.
+  updateCinematic(k) {
+    const C = this.cine, cs = this.cs, cam = this.cam, a = C.a, d = C.f;
+    C.t += k;
+    const u = C.t / C.dur;
+    if (u >= 1 || !a.joints || !d.joints) {
+      cam.setRotation(cam.rotation * 0.85);
+      if (Math.abs(cam.rotation) < 0.002) { cam.setRotation(0); this.cine = null; }
+      return false;
+    }
+    const mx = (a.x + d.x) / 2;
+    let tx, ty, zoom, rot, lerp = 0.12;
+    if (u < 0.22) { // plano 1: primerísimo plano de la cara del ganador, inclinado
+      tx = a.joints.headX + a.facing * 30; ty = a.joints.headY + 10; zoom = 2.7; rot = -0.16 * a.facing; lerp = C.cut === 1 ? 0.12 : 1; C.cut = 1;
+    } else if (u < 0.62) { // plano 2: contrapicado desde el suelo, girando lentamente
+      tx = mx + Math.sin(C.t * 0.02) * 30; ty = GROUND_Y - 40; zoom = 1.75 + u * 0.4; rot = 0.12 * a.facing - (u - 0.22) * 0.25 * a.facing; lerp = C.cut === 2 ? 0.1 : 1; C.cut = 2;
+    } else { // plano 3: abierto sobre la víctima con zoom de impacto
+      tx = d.visible ? d.x : mx; ty = d.visible ? Math.min(GROUND_Y - 90, d.y - 100) : GROUND_Y - 300; zoom = 2.1 - (u - 0.62) * 0.8; rot = -0.07 * a.facing; lerp = C.cut === 3 ? 0.14 : 1; C.cut = 3;
+    }
+    if (lerp === 1) { this.fx.flash(tx, ty, 0xffffff, 3, 120); this.sfx('whoosh', { pitch: 0.7, gain: 0.6 }); }
+    // cámara en mano
+    tx += Math.sin(C.t * 0.31) * 3 + Math.sin(C.t * 0.13) * 5; ty += Math.cos(C.t * 0.27) * 3;
+    cs.x += (tx - cs.x) * Math.min(1, lerp * k);
+    cs.y += (ty - cs.y) * Math.min(1, lerp * k);
+    cs.zoom += (zoom - cs.zoom) * Math.min(1, lerp * k);
+    cam.setRotation(cam.rotation + (rot - cam.rotation) * Math.min(1, (lerp === 1 ? 1 : 0.08) * k));
+    cam.setZoom(cs.zoom);
+    cam.centerOn(cs.x, cs.y);
+    return true;
+  }
+
   updateCamera(k) {
+    if (this.cine && this.updateCinematic(k)) return;
     const b = this.b, cs = this.cs, cam = this.cam;
     const fs = b.fighters.filter(f => (f.alive || (b.lastKO && b.lastKO.f === f)) && f.visible && !f.decoyOf && f.y > GROUND_Y - 800);
     let minX = 1e9, maxX = -1e9, minY = GROUND_Y;
@@ -615,7 +648,12 @@ export class BattleView {
       case 'finisher': {
         const F = FINISHERS[e.id];
         this.scene.events.emit('ultBanner', { f: e.a, def: { name: 'REMATE · ' + (F ? F.name : ''), color: '#ffd166', anim: [[0, 'guard']] } });
-        this.sfx('ultCast'); this.duck(2, 0.3); this.dimTarget = 0.45; S.time.delayedCall(1500, () => { this.dimTarget = 0; });
+        this.sfx('ultCast'); this.duck(2.5, 0.25); this.dimTarget = 0.35; S.time.delayedCall(1500, () => { this.dimTarget = 0; });
+        // modo película: cámara cinemática + franjas + grano (frames del remate en cámara lenta ≈ x1.8)
+        this.cine = { a: e.a, f: e.f, t: 0, dur: (e.frames || 80) * 1.8 + 20, cut: 0 };
+        this.cs.focus = null;
+        S.events.emit('letterbox', Math.round(this.cine.dur));
+        S.events.emit('filmMode', Math.round(this.cine.dur));
         break;
       }
       case 'domainEnd': this.dimTarget = 0; this.domainOwner = null; break;
@@ -796,6 +834,7 @@ export class BattleView {
 
   onKO(e) {
     const f = e.f, fx = this.fx;
+    if (this.cine) { this.cine.t = Math.max(this.cine.t, this.cine.dur * 0.62); }
     const look = e.attacker ? this.lookFor(e.attacker) : { aura: 0xffffff };
     fx.ring(f.x, f.y - 90, 0xffffff, 4, 700);
     fx.ring(f.x, f.y - 90, look.aura, 6, 1000);

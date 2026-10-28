@@ -198,8 +198,13 @@ export class Battle {
     if (f.state === 'locked') { f.aura = 1; if (f.lockedBy && f.lockedBy.move && f.lockedBy.move.lock) f.lockedBy.move.lock.lethal = true; return; }
     if (this.training && f.infiniteAura) { f.aura = 1; return; }
     // golpe que gana el combate: si el atacante tiene un remate equipado, se juega la animación de remate
-    if (attacker && attacker !== f && attacker.alive && attacker.finisher && attacker.finisher !== 'none' && !this.finisherUsed && this.phase === 'fight' && !this.opts.endless &&
-        attacker.state !== 'locked' && this.alive(f.team).length === 1 && this.wins[attacker.team] + 1 >= this.roundsToWin && MOVES['fin_' + attacker.finisher] && FINISHER_SPECS[attacker.finisher]) {
+    // el ganador es el atacante o, si el K.O. vino de otra fuente (estado, veneno...), cualquier rival vivo
+    const winner = attacker && attacker !== f && attacker.alive && attacker.team !== f.team ? attacker : this.fighters.find(q => q.alive && q.team !== f.team && !q.decoyOf);
+    const finId = winner && (winner.finisher === undefined || winner.finisher === null ? 'kickSpace' : winner.finisher);
+    if (winner && finId !== 'none' && !this.finisherUsed && this.phase === 'fight' && !this.opts.endless && !this.training &&
+        this.alive(f.team).length === 1 && this.wins[winner.team] + 1 >= this.roundsToWin && FINISHER_SPECS[finId]) {
+      winner.finisher = finId;
+      attacker = winner;
       f.aura = 1;
       this.finisherUsed = true;
       this.startFinisher(attacker, f);
@@ -229,6 +234,9 @@ export class Battle {
   }
 
   startFinisher(a, d) {
+    if (d.lockedBy && d.lockedBy !== a && d.lockedBy.move && d.lockedBy.move.lock) this.releaseLock(d.lockedBy, d.lockedBy.move.lock, true);
+    d.lockedBy = null; if (d.state === 'locked') d.setState('idle');
+    if (a.state === 'locked' && a.lockedBy && a.lockedBy.move && a.lockedBy.move.lock) this.releaseLock(a.lockedBy, a.lockedBy.move.lock, true);
     for (const q of [a, d]) {
       if (q.move && q.move.lock) this.releaseLock(q, q.move.lock, true);
       q.move = null; q.status.length = 0; q.vx = 0; q.vy = 0;
@@ -241,7 +249,10 @@ export class Battle {
     this.startLock(a, d, FINISHER_SPECS[a.finisher](a, d, this));
     if (a.move && a.move.lock) a.move.lock.lethal = true;
     a.stats.finisher = a.finisher;
-    this.emit('finisher', { a, f: d, id: a.finisher });
+    // cámara lenta durante el remate (cinemática)
+    const fr = a.move && a.move.lock ? a.move.lock.spec.frames : 80;
+    this.slowmo = fr + 10; this.slowScale = 0.55;
+    this.emit('finisher', { a, f: d, id: a.finisher, frames: fr });
   }
 
   setDefeat(f) {

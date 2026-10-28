@@ -586,7 +586,7 @@ export class Fighter {
   physics() {
     if (this.state === 'locked') return;
     // patada espacial: sale disparado hacia arriba hasta perderse entre las estrellas
-    if (this.toSpace) { this.vy = Math.min(this.vy, -26); this.y += this.vy; this.x += this.vx * 0.3; if (this.y < GROUND_Y - 2600) { this.visible = false; this.vy = 0; } return; }
+    if (this.toSpace) { this.vy = Math.min(this.vy, -26); this.y += this.vy; this.x = Math.max(WALL_L, Math.min(WALL_R, this.x + this.vx * 0.3)); if (this.y < GROUND_Y - 2600) { this.visible = false; this.vy = 0; } return; }
     const b = this.b;
     if (!this.grounded) {
       const g = this.move && this.move.def.gravity !== undefined ? this.move.def.gravity : 1;

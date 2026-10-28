@@ -70,6 +70,7 @@ export class HUDScene extends Phaser.Scene {
       flash: (c, ms) => { this.flashRect.setFillStyle(c, 0.7); this.tweens.add({ targets: this.flashRect, fillAlpha: 0, duration: ms || 200 }); },
       ultBanner: d => this.ultBanner(d.f, d.def),
       letterbox: frames => this.letterbox(frames),
+      filmMode: frames => { this.film = frames; this.filmMax = frames; },
       ko: e => this.ko(e),
       bev: e => this.onBev(e),
       wave: n => { this.texts.wave.setText('OLEADA ' + n); this.announce('OLEADA ' + n, n % 5 === 0 ? '¡JEFE!' : '¡Vienen más!', '#ffd166'); }
@@ -459,6 +460,19 @@ export class HUDScene extends Phaser.Scene {
     if (b.domain) { g.lineStyle(30, 0x8a2be2, 0.25); g.strokeRect(0, 0, 1280, 720); }
     this.drawAnnBand();
     this.drawSpeedLines();
+    // remate en modo película: grano, viñeta fuerte, rótulo REC y tinte cálido
+    if (this.film > 0) {
+      this.film--;
+      const k = Math.min(1, this.film / 15, (this.filmMax - this.film) / 10);
+      const gg = this.gTop;
+      for (let i = 0; i < 70; i++) { gg.fillStyle(Math.random() < 0.5 ? 0xffffff : 0x000000, 0.12 * k); gg.fillRect(Math.random() * 1280, Math.random() * 720, 2, 2); }
+      gg.fillStyle(0x000000, 0.35 * k); gg.fillRect(0, 0, 1280, 120); gg.fillRect(0, 600, 1280, 120);
+      gg.fillStyle(0xffb347, 0.06 * k); gg.fillRect(0, 0, 1280, 720);
+      if (Math.floor(this.t / 20) % 2) { gg.fillStyle(0xff2d2d, k); gg.fillCircle(1040, 108, 8); }
+      if (!this.recT) this.recT = txt(this, 1056, 108, 'REC  ◉  REMATE', 18, '#ffffff', { oy: 0.5 }).setDepth(60);
+      this.recT.setAlpha(k).setText('REC  ' + String(Math.floor((this.filmMax - this.film) / 60)).padStart(2, '0') + ':' + String(Math.floor((this.filmMax - this.film) % 60)).padStart(2, '0'));
+      this.recT.setPosition(1056, 108).setOrigin(0, 0.5);
+    } else if (this.recT) { this.recT.destroy(); this.recT = null; }
   }
 
   ghostOf(f) {

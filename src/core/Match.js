@@ -30,7 +30,7 @@ export function buildBattle(spec) {
   spec.enemies.forEach((bot, i) => {
     const level = spec.levelOverride ?? bot.level;
     const ctrl = spec.mode === 'training' ? new DummyController(spec.dummyMode || 'stand') : new AIController({ level, style: bot.style, seed: (Date.now() + i * 7919) & 0xffffff });
-    fighters.push({ team: 1, profile: botProfile(bot), loadout: { ...bot.loadout }, controller: ctrl, maxAura: spec.mode === 'training' ? 1000 : bot.maxAura, infiniteAura: spec.mode === 'training' });
+    fighters.push({ team: 1, profile: botProfile(bot), loadout: { ...bot.loadout }, controller: ctrl, finisher: ['kickSpace', 'pantsDown', 'bonkGround', 'explosionWalk'][(bot.name.length + i) % 4], maxAura: spec.mode === 'training' ? 1000 : bot.maxAura, infiniteAura: spec.mode === 'training' });
   });
   const b = new Battle({
     fighters, mode: spec.mode, training: spec.mode === 'training', timer: spec.mode === 'training' ? 0 : (spec.timer ?? 99),
