@@ -11,7 +11,7 @@ export class PathScene extends Phaser.Scene {
   create() {
     if (!this.scene.isActive('Demo')) this.scene.launch('Demo');
     this.scene.sendToBack('Demo');
-    this.add.rectangle(640, 360, 1280, 720, 0x05030c, 0.78);
+    this.add.rectangle(640, 360, 1280, 720, 0x05030c, 0.86);
     txt(this, 60, 30, 'CAMINO DEL AURA', 60, '#ffffff');
     const d = Save.d;
     const done = PATH.reduce((n, c) => n + c.stages.filter(s => d.path.cleared[s.id]).length, 0);
