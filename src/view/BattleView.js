@@ -746,11 +746,11 @@ export class BattleView {
   brainrotStep(e) {
     const fx = this.fx, v = e.f, a = e.a, d = Math.sign(v.x - a.x) || 1;
     switch (e.step) {
-      case 'shark': fx.custom(40, (gt, gn, k, el) => { const p = Math.min(1, el / 8); drawShark(gn, a.x + (v.x - a.x) * p, GROUND_Y - 60 - Math.sin(p * Math.PI) * 60, d, 1.4, el * 2); }); break;
+      case 'shark': fx.custom(22, (gt, gn, k, el) => { const p = Math.min(1, el / 8); drawShark(gn, a.x + (v.x - a.x) * p, GROUND_Y - 60 - Math.sin(p * Math.PI) * 60, d, 1.4, el * 2); }); break;
       case 'plane':
         this.sfx('planeEngine', { dur: 1.2 });
-        fx.custom(44, (gt, gn, k, el) => { const x = v.x - d * 700 + d * el * 32; drawCrocPlane(gn, x, v.y - 420, d, 1.3, el); });
-        for (const dt of [12, 20, 28]) this.scene.time.delayedCall(dt * 16, () => { this.sfx('bombWhistle'); fx.custom(10, (gt, gn, k2, el2) => { gn.fillStyle(0x222222, 1); gn.fillCircle(v.x + (Math.random() - 0.5) * 6, v.y - 380 + el2 * 32, 10); }); });
+        fx.custom(44, (gt, gn, k, el) => { const x = v.x - d * 700 + d * el * 32; drawCrocPlane(gn, x, v.y - 300, d, 1.3, el); });
+        for (const dt of [12, 20, 28]) this.scene.time.delayedCall(dt * 16, () => { this.sfx('bombWhistle'); fx.custom(10, (gt, gn, k2, el2) => { gn.fillStyle(0x222222, 1); gn.fillCircle(v.x + (Math.random() - 0.5) * 6, v.y - 280 + el2 * 24, 10); }); });
         break;
       case 'tung': fx.custom(36, (gt, gn, k, el) => drawTungTung(gn, v.x + d * 90, GROUND_Y, 1.3, el * 1.4, -d)); fx.text(v.x, v.y - 260, 'TUNG TUNG TUNG SAHUR', { color: '#c68642', size: 36 }); break;
       case 'ballerina': this.sfx('musicBox'); fx.custom(30, (gt, gn, k, el) => drawBallerina(gn, v.x - d * 300 + d * el * 12, GROUND_Y, 1.4, el * 2)); fx.text(v.x, v.y - 260, 'BALLERINA CAPPUCCINA', { color: '#ffb6c1', size: 34 }); break;
