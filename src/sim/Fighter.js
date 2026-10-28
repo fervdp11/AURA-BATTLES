@@ -120,7 +120,11 @@ export class Fighter {
   }
 
   // ---------- estados ----------
-  setState(s) { this.state = s; this.sf = 0; }
+  setState(s) {
+    // un movimiento solo existe en estado de ataque: si algo externo nos saca de él, se cancela (y se suelta la llave)
+    if (this.move && INTERRUPT.has(s)) { if (this.move.lock) this.b.releaseLock(this, this.move.lock, true); this.move = null; }
+    this.state = s; this.sf = 0;
+  }
 
   addStatus(id, frames, data = {}, from = null) {
     const def = STATUS[id];
@@ -555,7 +559,11 @@ export class Fighter {
     const ox = typeof off[0] === 'function' ? off[0](L.f) : off[0];
     const oy = typeof off[1] === 'function' ? off[1](L.f) : off[1];
     // el agarrado se desliza a su sitio (sin teletransporte)
-    const tx = this.x + this.facing * ox * this.scale, ty = Math.min(GROUND_Y, this.y + oy);
+    let tx = this.x + this.facing * ox * this.scale;
+    const ty = Math.min(GROUND_Y, this.y + oy);
+    // en la esquina, el agarrado no atraviesa la pared: es el atacante el que retrocede
+    const cx = Math.max(WALL_L, Math.min(WALL_R, tx));
+    if (cx !== tx) { this.x = Math.max(WALL_L, Math.min(WALL_R, this.x - (tx - cx))); tx = cx; }
     const k = L.f < 10 ? 0.3 : 0.6;
     t.x += (tx - t.x) * k; t.y += (ty - t.y) * k;
     t.facing = -this.facing;
@@ -880,6 +888,7 @@ export class Fighter {
   }
 }
 
+const INTERRUPT = new Set(['hitstun', 'airhit', 'knockdown', 'ko', 'lose', 'win', 'locked', 'getup']);
 const _tgt = makePose(POSES.idle);
 const _ovr = { hands: { n: null, f: null }, feet: { n: null, f: null } };
 function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
