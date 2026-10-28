@@ -470,12 +470,14 @@ export class AIController {
 
     // básicos
     if (token) {
+      // cuerpo a cuerpo todos los estilos se defienden con golpes
+      const close = Math.max(S.aggr, 0.65);
       if (dist < 95) {
-        add(2.0 * S.aggr, () => this.useMove(inp, 'jab'), 'jab');
-        add(1.0 * S.aggr * (o.block ? 1.8 : 0.8), () => this.useMove(inp, this.chance(0.5) ? 'lowKick' : 'sweep'), 'low');
+        add(2.0 * close, () => this.useMove(inp, 'jab'), 'jab');
+        add(1.0 * close * (o.block ? 1.8 : 0.8), () => this.useMove(inp, this.chance(0.5) ? 'lowKick' : 'sweep'), 'low');
         if (o.state === 'air' || this.habits.jumps > 6) add(1.2 * L.antiAir, () => this.useMove(inp, 'uppercut'), 'upper');
       }
-      if (dist >= 60 && dist < 135) add(1.3 * S.aggr, () => this.useMove(inp, 'roundhouse'), 'round');
+      if (dist >= 60 && dist < 135) add(1.3 * close, () => this.useMove(inp, 'roundhouse'), 'round');
       if (dist >= 120 && dist < 230) add(1.1 * S.aggr, () => this.useMove(inp, 'lunge'), 'lunge');
       if (dist >= 150 && dist < 280 && this.chance(0.5)) add(0.8 * S.aggr * (1 - L.antiAir * 0.3), () => { this.queue.push({ at: b.frame, a: 'jump', fwd: true }); }, 'jumpIn');
       if (dist > pmax) add(1.4 * (0.5 + S.aggr), () => { this.hold.walk = 16 + Math.floor(this.r() * 16); this.hold.walkDir = 1; }, 'approach');
