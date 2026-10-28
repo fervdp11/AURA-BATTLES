@@ -10,6 +10,17 @@ import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
 
 const STRENGTH_SFX = { light: 'hitLight', medium: 'hitMed', heavy: 'hitHeavy', mega: 'hitMega' };
+// firma sonora (sin voces) de cada técnica al lanzarla
+const MOVE_SFX = {
+  sixSeven: ['tauntHorn'], sixSevenBarrage: ['tauntHorn', 'ultCast'], fakeHandshake: ['swish'], mewing: ['mewClick'], infiniteMewing: ['mewClick', 'sparkle'],
+  sigmaStare: ['sigmaHum'], sigmaTeleport: ['sigmaHum', 'teleport'], sigmaRule: ['sigmaHum'], rizz: ['kissPop', 'rizzChime'], rizzStorm: ['rizzChime'],
+  siuuu: ['whooshHeavy'], auraWalk: ['fingerSnap'], auraFarming: ['sparkle'], griddy: ['scratch'], flossShield: ['scratch'], skibidiSpin: ['scratch'],
+  unoReverse: ['card'], clapBack: ['swish'], tungTung: ['woodKnock'], bombardiro: ['planeEngine'], ballerinaSpin: ['musicBox'], timeStop: ['rewind'],
+  perfectlyBalanced: ['fingerSnap'], letHimCook: ['fire'], caughtIn4K: ['shutter'], rickroll: ['tauntHorn'], ggEz: ['tauntHorn'], lBozo: ['tauntHorn'],
+  broReallyThought: ['tauntHorn'], skillIssue: ['tauntHorn'], micDrop: ['swish'], dealWithIt: ['swish'], mainCharacter: ['sparkle'], ohioMode: ['glitch'],
+  lagSpike: ['glitch'], afk: ['heartbeat'], thisIsFine: ['fire'], stonks: ['coin'], bigBrain: ['energyFull'], narutoRun: ['dash'], speedrun: ['dash'],
+  domainExpansion: ['domain'], finalAuraJudgment: ['ultCast'], ultimateNonchalance: ['sigmaHum'], coffinDance: ['tauntHorn'], auraOverload: ['ultCast']
+};
 const SHAKE = { light: [0, 0], medium: [70, 0.0025], heavy: [130, 0.005], mega: [240, 0.01] };
 const _ghostPose = makePose(POSES.dash);
 const _ghostJ = {};
@@ -52,7 +63,8 @@ export class BattleView {
   }
 
   sfx(n, o) { if (!this.opts.silent) Audio.play(n, o); }
-  say(t, o) { if (!this.opts.silent) Audio.speak(t, o); }
+  // sonido posicionado en estéreo según la x de mundo
+  sfxAt(n, x, o = {}) { if (this.opts.silent) return; const half = 640 / (this.cs.zoom || 1); Audio.play(n, { ...o, pan: (x - this.cs.x) / half }); }
   duck(a, b) { if (!this.opts.silent) Audio.duck(a, b); }
 
   lookFor(f) {
@@ -392,7 +404,7 @@ export class BattleView {
         fx.flash(e.x, e.y, col, e.strength === 'mega' ? 2.4 : e.strength === 'heavy' ? 1.5 : 0.9);
         if (e.strength !== 'light') fx.ring(e.x, e.y, col, e.strength === 'mega' ? 2.2 : e.strength === 'heavy' ? 1.3 : 0.8);
         if (e.counterHit) fx.ring(e.x, e.y, 0xff3030, 1.6);
-        this.sfx(STRENGTH_SFX[e.strength] || 'hitLight', { pitch: 0.92 + Math.random() * 0.16, minGap: 0.02 });
+        this.sfxAt(STRENGTH_SFX[e.strength] || 'hitLight', e.x, { pitch: 0.92 + Math.random() * 0.16, minGap: 0.02 });
         this.shake(e.strength);
         if (e.strength === 'heavy' || e.strength === 'mega') { this.cs.punch += e.strength === 'mega' ? 0.08 : 0.035; this.arena.react('ooh', 0.4); }
         if (this.opts.damageNumbers !== false && e.dmg >= 1) fx.number(e.x, e.y - 20, e.dmg, e.counterHit ? '#ff5050' : '#ffffff', e.dmg > 80);
@@ -403,7 +415,7 @@ export class BattleView {
       case 'block':
         fx.sparks(e.x, e.y, 8, 0x7fd1ff, 7, e.f.facing > 0 ? 0 : Math.PI, 2);
         fx.custom(10, (gt, gn, k) => { gt.lineStyle(5 * k, 0x7fd1ff, k); gt.beginPath(); gt.arc(e.f.x, e.f.y - 100 * e.f.scale, 50 * e.f.scale, e.f.facing > 0 ? -1 : Math.PI - 1, e.f.facing > 0 ? 1 : Math.PI + 1); gt.strokePath(); });
-        this.sfx('block', { pitch: 0.9 + Math.random() * 0.2 });
+        this.sfxAt('block', e.x, { pitch: 0.9 + Math.random() * 0.2 });
         break;
       case 'parry':
         fx.ring(e.x, e.y, 0xffd34d, 2.4, 420); fx.flash(e.x, e.y, 0xffffff, 2.6);
@@ -425,7 +437,7 @@ export class BattleView {
         this.focus(f.x + f.facing * 40, f.y - 120 * f.scale, 1.55, 40, 0.25);
         this.dimTarget = 0.7;
         S.time.delayedCall(700, () => { this.dimTarget = 0; });
-        this.sfx('announce'); this.sfx('charge', { dur: 0.6 }); this.duck(1.2, 0.25);
+        this.sfx('ultCast'); this.sfx('charge', { dur: 0.6 }); this.duck(1.2, 0.25);
         fx.ring(f.x, f.y - 100, this.lookFor(f).aura, 3, 600);
         fx.flash(f.x, f.y - 100, this.lookFor(f).aura, 3, 500);
         this.scene.events.emit('ultBanner', { f, def: e.def });
@@ -451,7 +463,7 @@ export class BattleView {
         fx.text(f.x, f.y - 250 * f.scale, e.text, { color: e.color || '#ff66cc', size: 40, hold: 900 });
         fx.number(f.x, f.y - 150, e.amount, '#ff66cc', true);
         fx.emit('star', f.x, f.y - 120, 10, hex(e.color || '#ff66cc'));
-        this.sfx('crowdLaugh'); this.sfx('crowdOoh');
+        this.sfx('tauntHorn'); this.sfx('sparkle');
         this.arena.react('cheer', 0.8);
         this.cs.punch += 0.04;
         this.shake('medium');
@@ -497,13 +509,14 @@ export class BattleView {
         this.sfx('teleport');
         break;
       }
+      case 'step': if (Math.abs(e.f.vx) > 3) fx.dust(e.x, GROUND_Y, 2, 0xcfc6b8, -Math.sign(e.f.vx) * e.f.facing); this.sfxAt('step', e.x, { gain: Math.min(1, 0.4 + Math.abs(e.f.vx) * 0.08), minGap: 0.05 }); break;
       case 'jump': fx.dust(e.f.x, GROUND_Y, e.double ? 4 : 6); this.sfx('jump'); break;
       case 'land': fx.dust(e.f.x, GROUND_Y, e.heavy ? 14 : 8); this.sfx('land'); if (e.heavy) this.shake('medium'); break;
       case 'dash': fx.dust(e.f.x, GROUND_Y, 6, 0xcfc6b8, -e.f.facing * e.dir); this.sfx('dash'); break;
       case 'bossLand': {
         const f = e.f;
         fx.groundWave(f.x, GROUND_Y - 4, this.lookFor(f).aura, 500); fx.dust(f.x, GROUND_Y, 30); fx.ring(f.x, f.y - 60, this.lookFor(f).aura, 3);
-        this.sfx('vineBoom'); this.sfx('explosion'); this.shake('mega'); this.arena.react('ooh', 2); this.sfx('crowdOoh');
+        this.sfx('vineBoom'); this.sfx('explosion'); this.shake('mega'); this.arena.react('ooh', 2);
         fx.text(f.x, f.y - 280, f.name.toUpperCase(), { color: '#ff4d6d', size: 44, hold: 900 });
         break;
       }
@@ -522,10 +535,10 @@ export class BattleView {
       case 'grab': this.sfx('slap', { pitch: 0.6 }); break;
       case 'decoy': fx.emit('glow', e.f.x, e.f.y - 90, 18, 0xff77cc); this.sfx('teleport'); break;
       case 'decoyPop': fx.emit('heart', e.f.x, e.f.y - 90, 14, 0xff77cc); fx.ring(e.f.x, e.f.y - 90, 0xff77cc, 1.6); this.sfx('pop'); break;
-      case 'crowd': this.arena.react(e.mood === 'throw' ? 'cheer' : e.mood, 1); this.sfx(e.mood === 'throw' ? 'crowdOoh' : 'crowdCheer', { level: 0.3 }); break;
+      case 'crowd': this.arena.react(e.mood === 'throw' ? 'cheer' : e.mood, 1); break;
       case 'charge': if (Math.random() < 0.5) this.fx.motes(e.f.x, e.f.y - 100, this.lookFor(e.f).aura, 2, 60); break;
       case 'timeStop': {
-        this.sfx('timeStop'); this.say('za warudo', { pitch: 0.6, rate: 0.8, force: true });
+        this.sfx('timeStop');
         if (this.cam.postFX) { try { this.colorFx = this.cam.postFX.addColorMatrix(); this.colorFx.negative(); S.time.delayedCall(260, () => { if (this.colorFx) { this.colorFx.reset(); this.colorFx.grayscale(0.85); } }); } catch (err) { this.colorFx = null; } }
         fx.ring(e.f.x, e.f.y - 100, 0xffd700, 6, 900);
         break;
@@ -557,7 +570,8 @@ export class BattleView {
     if (d.slot === 'hidden') { this.sfx('whoosh'); return; }
     this.sfx('whoosh', { pitch: 1.2 });
     if (d.slot !== 'ult') this.fx.text(f.x, f.y - 215 * f.scale, d.name.toUpperCase(), { color: d.color || '#ffffff', size: 26, hold: 420, rise: 30 });
-    if (d.voice) this.say(d.voice, { pitch: f.isHuman ? 1.05 : 0.8 + (f.id % 5) * 0.1, rate: d.id === 'sixSeven' ? 1.5 : 1.1 });
+    const sig = MOVE_SFX[d.id] || [d.slot === 'ult' ? 'ultCast' : 'cast'];
+    for (const n of sig) this.sfxAt(n, f.x);
     if (d.id === 'sixSeven' || d.id === 'sixSevenBarrage') this.sfx('count');
   }
 
@@ -598,7 +612,7 @@ export class BattleView {
       case 'eyeBeam': { const j = f.joints; fx.beam(j.headX + f.facing * 8, j.headY - 2, j.headX + f.facing * e.len, j.headY - 2, 0xffe066, 14, 20); this.sfx('beam'); this.shake('medium'); break; }
       case 'sideEye': fx.text(e.d.x, e.d.y - 210, '👀', { size: 40, hold: 400 }); this.sfx('shutter'); fx.beam(f.joints.headX, f.joints.headY, e.d.joints.headX, e.d.joints.headY, 0xffe066, 3, 14); break;
       case 'auraFlare': fx.ring(f.x, f.y - 90, e.color, e.big ? 3 : 2, 500); fx.emit('glow', f.x, f.y - 90, e.big ? 40 : 20, e.color); this.sfx('burst'); if (e.big) { this.shake('heavy'); this.scene.events.emit('flash', e.color, 200); } break;
-      case 'siuLand': fx.groundWave(f.x, GROUND_Y - 4, 0xff4d6d, 340); fx.dust(f.x, GROUND_Y, 20); fx.flash(f.x, f.y - 80, 0xffffff, 2); this.shake('heavy'); this.sfx('vineBoom'); this.arena.react('cheer', 1.2); this.sfx('crowdCheer', { level: 0.35 }); break;
+      case 'siuLand': fx.groundWave(f.x, GROUND_Y - 4, 0xff4d6d, 340); fx.dust(f.x, GROUND_Y, 20); fx.flash(f.x, f.y - 80, 0xffffff, 2); this.shake('heavy'); this.sfx('vineBoom'); this.arena.react('cheer', 1.2); break;
       case 'shadow': if (Math.floor(this.t) % 2 === 0) fx.marker(e.x, GROUND_Y, e.lock ? 0xff3333 : 0xffaa00, 3, 'shadow'); break;
       case 'heroLand': fx.groundWave(f.x, GROUND_Y - 4, look.aura, 300); fx.dust(f.x, GROUND_Y, 26); fx.ring(f.x, f.y - 40, look.aura, 2.4); this.shake('mega'); this.sfx('explosion'); break;
       case 'uno': fx.ring(f.x, f.y - 110, 0xff3b3b, 2); this.sfx('card'); fx.text(f.x, f.y - 160, '🔄', { size: 40, hold: 300 }); break;
@@ -606,7 +620,7 @@ export class BattleView {
       case 'theft': fx.custom(24, (gt, gn, k) => { for (let i = 0; i < 6; i++) { const t2 = ((1 - k) + i / 6) % 1; const x = e.f.x + (e.a.x - e.f.x) * t2, y = e.f.y - 100 - Math.sin(t2 * Math.PI) * 60; gt.fillStyle(e.energy ? 0x4cc9f0 : 0xffd700, k); gt.fillCircle(x, y, 6); } }); this.sfx('coin'); break;
       case 'emote': fx.emit('star', f.x, f.y - 120, 8, 0xffffff); this.sfx('pop'); break;
       case 'ohio': fx.emit('glow', f.x, f.y - 100, 20, 0x7cfc00); this.sfx('glitch'); break;
-      case 'spotlight': fx.custom(60, (gt, gn, k) => { gt.fillStyle(0xfff2a8, 0.25 * k); gt.fillTriangle(f.x, -600, f.x - 110, GROUND_Y, f.x + 110, GROUND_Y); }); this.sfx('crowdCheer', { level: 0.35 }); break;
+      case 'spotlight': fx.custom(60, (gt, gn, k) => { gt.fillStyle(0xfff2a8, 0.25 * k); gt.fillTriangle(f.x, -600, f.x - 110, GROUND_Y, f.x + 110, GROUND_Y); }); this.sfx('sparkle'); break;
       case 'flash4k': fx.flash(f.joints.nHandX, f.joints.nHandY, 0xffffff, 3, 300); this.sfx('shutter'); fx.custom(10, (gt, gn, k) => { gt.fillStyle(0xffffff, 0.35 * k); gt.fillTriangle(f.joints.nHandX, f.joints.nHandY, f.x + f.facing * 320, f.y - 260, f.x + f.facing * 320, f.y); }); break;
       case 'cook': fx.emit('smoke', f.joints.nHandX, f.joints.nHandY, 10, 0xffffff); this.sfx('fire'); break;
       case 'mog': fx.ring(f.x, f.y - 120, 0x555577, 3, 500); this.sfx('whooshHeavy', { pitch: 0.5 }); break;
@@ -643,7 +657,7 @@ export class BattleView {
             gn.fillStyle(0xffffff, 1); gn.fillRect(px - 9, py - 128 + bob, 18, 4);
           }
         });
-        this.say('astronomia', { force: true });
+        this.sfx('tauntHorn');
         break;
       }
       case 'clap': fx.ring(f.joints.nHandX, f.joints.nHandY, 0xffd166, 2); this.sfx('slap', { pitch: 1.3 }); break;
@@ -663,7 +677,6 @@ export class BattleView {
     this.sfx('ko'); this.sfx('vineBoom');
     this.shake([500, 0.016]);
     this.arena.react('cheer', 2);
-    this.sfx('crowdCheer', { level: 0.5 });
     if (e.final) {
       this.focus(f.x, f.y - 120, 1.45, 110, 0.06);
       this.scene.events.emit('ko', e);
@@ -676,9 +689,7 @@ export class BattleView {
   celebrate(team) {
     for (const f of this.b.fighters) if (f.team === team && f.alive) {
       this.fx.emit('confetti', f.x, f.y - 200, 60, Math.random() * 0xffffff);
-      const c = f.profile.celebration;
-      const v = { siuuu: 'siuuuuuu', sixSeven: 'six seven', mewing: 'mewing streak', chill: 'just a chill guy', laugh: 'bro really thought', jojo: 'yare yare daze', auraFarming: 'aura farming', sigma: 'sigma' }[c];
-      if (v && f.isHuman) this.say(v, { force: true });
+      this.sfx('sparkle');
     }
     for (let i = 0; i < 3; i++) this.scene.time.delayedCall(400 * i, () => this.fx.emit('confetti', this.cs.x + (Math.random() - 0.5) * 800, this.cs.y - 300, 40));
   }

@@ -73,7 +73,7 @@ export class PrestigeScene extends Phaser.Scene {
     if (!this.confirm) { this.confirm = true; toast(this, 'Pulsa ENTER otra vez para confirmar', '#ffd166'); this.time.delayedCall(3000, () => { this.confirm = false; }); return; }
     Save.doPrestige();
     this.confirm = false;
-    Audio.play('victory'); Audio.announce('Prestigio');
+    Audio.play('victory'); Audio.play('sparkle');
     this.cameras.main.flash(500, 255, 220, 120);
     toast(this, '✦ PRESTIGIO ' + Save.d.prestige + ' ✦', '#ffd166');
     this.show('p');

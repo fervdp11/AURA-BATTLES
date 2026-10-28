@@ -143,9 +143,9 @@ export class HUDScene extends Phaser.Scene {
   onBev(e) {
     if (e.type === 'move' && this.tut && e.f === this.p) this.tut.used.add(e.def.id);
     if (e.type === 'announce') {
-      if (e.fight) { this.announce(e.text, '', '#7df9ff', 70); Audio.announce('¡Pelea!'); Audio.play('announce'); }
-      else if (e.time) { this.announce(e.text, '', '#ffd166', 90); Audio.announce('¡Tiempo!'); }
-      else { this.announce(e.text, e.sub ? (this.b.opts.mode === 'survival' ? 'SUPERVIVENCIA' : this.subtitle()) : '', '#ffffff', 80); if (e.text.startsWith('RONDA')) Audio.announce('Ronda ' + this.b.round); }
+      if (e.fight) { this.announce(e.text, '', '#7df9ff', 70); Audio.play('fightHit'); }
+      else if (e.time) { this.announce(e.text, '', '#ffd166', 90); Audio.play('roundGong'); }
+      else { this.announce(e.text, e.sub ? (this.b.opts.mode === 'survival' ? 'SUPERVIVENCIA' : this.subtitle()) : '', '#ffffff', 80); if (e.text.startsWith('RONDA') || e.text.startsWith('¿')) Audio.play('roundGong'); }
     }
     if (e.type === 'roundStart' && this.b.round > 1) this.announce('RONDA ' + this.b.round, '', '#ffffff', 80);
   }
@@ -170,7 +170,7 @@ export class HUDScene extends Phaser.Scene {
     const ult = e.attacker && e.attacker.move && e.attacker.move.def.slot === 'ult';
     const hum = e.attacker && e.attacker.move && e.attacker.move.def.taunt;
     this.announce(time ? 'TIEMPO' : ult ? 'ULTIMATE K.O.' : 'K.O.', perfect ? 'PERFECT AURA' : hum ? 'HUMILLADO' : ult ? e.attacker.move.def.name.toUpperCase() : 'AURA DESTRUIDA', perfect ? '#ffd166' : ult ? '#c084fc' : '#ff4d6d', 120);
-    if (!time) { Audio.announce(perfect ? 'K.O. Perfecto' : 'K.O.'); this.speedLines(70, 0xffffff); }
+    if (!time) { Audio.play('koSting'); this.speedLines(70, 0xffffff); }
   }
 
   speedLines(frames, color = 0xffffff) {

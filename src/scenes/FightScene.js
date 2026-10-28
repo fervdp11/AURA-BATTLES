@@ -86,7 +86,6 @@ export class FightScene extends Phaser.Scene {
       Audio.music('results');
       const win = e.team === b.player.team;
       Audio.play(win ? 'victory' : 'defeat');
-      if (this.spec.mode !== 'survival') Audio.announce(win ? (e.result.perfect ? 'Victoria perfecta' : 'Victoria') : 'Derrota');
     }
     if (e.type === 'matchEnd' && !this.ended) this.finish(e.result);
     if (e.type === 'waveClear') this.nextWave();
@@ -96,7 +95,7 @@ export class FightScene extends Phaser.Scene {
     const b = this.battle;
     this.wave++;
     this.events.emit('wave', this.wave);
-    Audio.announce('Oleada ' + this.wave);
+    Audio.play('roundGong');
     const p = b.player;
     p.heal(p.maxAura * 0.25); p.gainEnergy(25);
     this.time.delayedCall(1500, () => {

@@ -1,4 +1,4 @@
-// Motor de audio 100% sintetizado (WebAudio): efectos, música phonk procedural y voces (Web Speech).
+// Motor de audio 100% sintetizado (WebAudio): efectos originales y música phonk procedural. Sin voces.
 
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -6,10 +6,9 @@ class AudioEngine {
   constructor() {
     this.ctx = null; this.enabled = false;
     this.vol = { music: 0.55, sfx: 0.8 };
-    this.voiceOn = true; this.announcerOn = true;
     this.track = null; this.trackId = null;
-    this.lastVoice = 0;
     this.lastPlay = {};
+    this._dest = null;
   }
 
   init() {
@@ -86,7 +85,7 @@ class AudioEngine {
     let node = o;
     if (opts.filter) { const fl = ctx.createBiquadFilter(); fl.type = opts.filter; fl.frequency.value = opts.freq || 1000; fl.Q.value = opts.q || 1; node.connect(fl); node = fl; }
     if (opts.dist) { const ws = ctx.createWaveShaper(); ws.curve = this.dist; node.connect(ws); node = ws; }
-    node.connect(g); g.connect(dest || this.sfxBus);
+    node.connect(g); g.connect(dest || this._dest || this.sfxBus);
     if (opts.rev) { const s = ctx.createGain(); s.gain.value = opts.rev; g.connect(s); s.connect(this.reverb); }
     o.start(t); o.stop(t + (opts.attack || 0.004) + dur + 0.05);
     return o;
@@ -100,7 +99,7 @@ class AudioEngine {
     if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + dur);
     const g = ctx.createGain();
     this.env(g, t, opts.attack || 0.002, peak, dur);
-    src.connect(fl); fl.connect(g); g.connect(dest || this.sfxBus);
+    src.connect(fl); fl.connect(g); g.connect(dest || this._dest || this.sfxBus);
     if (opts.rev) { const s = ctx.createGain(); s.gain.value = opts.rev; g.connect(s); s.connect(this.reverb); }
     src.start(t, Math.random() * 1.5); src.stop(t + (opts.attack || 0.002) + dur + 0.05);
   }
@@ -113,31 +112,23 @@ class AudioEngine {
     if (this.lastPlay[name] && now - this.lastPlay[name] < (opts.minGap ?? 0.025)) return;
     this.lastPlay[name] = now;
     const t = now + 0.005;
-    const p = opts.pitch || 1;
+    // ligera variación de tono para que los golpes repetidos no suenen idénticos
+    const vary = opts.vary ?? !name.startsWith('ui_');
+    const p = (opts.pitch || 1) * (vary ? 1 + (Math.random() - 0.5) * 0.07 : 1);
     const S = SFX[name];
-    if (S) S.call(this, t, p, opts);
-  }
-
-  // ---------- voces ----------
-  speak(text, opts = {}) {
-    if (!text || !this.voiceOn || typeof speechSynthesis === 'undefined') return;
-    const now = performance.now();
-    if (!opts.force && now - this.lastVoice < (opts.gap ?? 700)) return;
-    this.lastVoice = now;
-    try {
-      if (opts.interrupt !== false) speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = opts.lang || 'en-US';
-      u.rate = opts.rate ?? 1.12; u.pitch = opts.pitch ?? 1; u.volume = Math.min(1, this.vol.sfx * 1.1);
-      const vs = speechSynthesis.getVoices();
-      const v = vs.find(x => x.lang && x.lang.startsWith(u.lang.slice(0, 2)));
-      if (v) u.voice = v;
-      speechSynthesis.speak(u);
-    } catch (e) { /* sin síntesis de voz */ }
-  }
-  announce(text, opts = {}) {
-    if (!this.announcerOn) return;
-    this.speak(text, { lang: 'es-ES', rate: 0.95, pitch: 0.55, force: true, ...opts });
+    if (!S) return;
+    // panorámica estéreo según la posición en pantalla (-1 izquierda, 1 derecha)
+    let pan = null;
+    if (opts.pan && this.ctx.createStereoPanner) {
+      pan = this.ctx.createStereoPanner(); pan.pan.value = Math.max(-0.8, Math.min(0.8, opts.pan));
+      const g = this.ctx.createGain(); g.gain.value = opts.gain ?? 1; pan.connect(g); g.connect(this.sfxBus);
+      setTimeout(() => { try { pan.disconnect(); g.disconnect(); } catch (e) { /* ya libre */ } }, 4000);
+    } else if (opts.gain !== undefined && opts.gain !== 1) {
+      pan = this.ctx.createGain(); pan.gain.value = opts.gain; pan.connect(this.sfxBus);
+      setTimeout(() => { try { pan.disconnect(); } catch (e) { /* ya libre */ } }, 4000);
+    }
+    this._dest = pan;
+    try { S.call(this, t, p, opts); } finally { this._dest = null; }
   }
 
   // ---------- música ----------
@@ -260,12 +251,6 @@ const SFX = {
   bonk(t) { this.osc('square', 680, 320, t, 0.11, 0.25, null, { filter: 'bandpass', freq: 900, q: 3 }); this.noise(t, 0.05, 0.3, 'bandpass', 1500); },
   card(t) { this.noise(t, 0.05, 0.3, 'highpass', 5000); this.osc('triangle', 1200, 1800, t, 0.06, 0.08); },
   snap(t) { this.noise(t, 0.02, 0.8, 'highpass', 4000); this.osc('sine', 3000, 1500, t, 0.03, 0.2, null, { rev: 0.5 }); },
-  crowdCheer(t, p, o) {
-    const lv = o.level || 0.25;
-    for (let i = 0; i < 6; i++) this.noise(t + i * 0.03, 1.4, lv * 0.5, 'bandpass', 700 + Math.random() * 1600, 900 + Math.random() * 900, null, { attack: 0.25, q: 0.7, rev: 0.4 });
-  },
-  crowdOoh(t) { for (const f of [180, 226, 270]) this.osc('sawtooth', f, f * 0.75, t, 0.9, 0.05, null, { filter: 'bandpass', freq: 520, q: 3, attack: 0.15, rev: 0.4 }); },
-  crowdLaugh(t) { for (let i = 0; i < 6; i++) this.noise(t + i * 0.12, 0.08, 0.2, 'bandpass', 900 + (i % 2) * 300, null, null, { q: 4, rev: 0.3 }); },
   timeStop(t) { this.noise(t, 0.6, 0.4, 'bandpass', 6000, 200, null, { attack: 0.5 }); this.osc('sine', 55, 40, t + 0.5, 2.4, 0.4, null, { rev: 0.8 }); for (let i = 0; i < 6; i++) this.osc('square', 1800, 1800, t + 0.6 + i * 0.4, 0.02, 0.08); },
   domain(t) { for (const f of [55, 82.4, 110, 164.8]) this.osc('sawtooth', f, f, t, 2.5, 0.06, null, { filter: 'lowpass', freq: 600, attack: 0.6, rev: 0.8 }); this.noise(t, 1.5, 0.15, 'bandpass', 3000, 9000, null, { attack: 1 }); },
   energyFull(t) { [523, 659, 784, 1046].forEach((f, i) => this.osc('sine', f, f, t + i * 0.06, 0.18, 0.13, null, { rev: 0.3 })); },
@@ -282,7 +267,48 @@ const SFX = {
   burst(t) { this.osc('sine', 200, 1200, t, 0.18, 0.3); this.noise(t, 0.3, 0.4, 'bandpass', 800, 5000, null, { rev: 0.3 }); },
   count(t) { this.osc('square', 880, 880, t, 0.05, 0.08, null, { filter: 'lowpass', freq: 2000 }); },
   deny(t) { this.osc('sawtooth', 140, 100, t, 0.12, 0.1, null, { filter: 'lowpass', freq: 800 }); },
-  coin(t) { this.osc('square', 988, 988, t, 0.05, 0.08, null, { filter: 'lowpass', freq: 4000 }); this.osc('square', 1319, 1319, t + 0.05, 0.15, 0.08, null, { filter: 'lowpass', freq: 4000 }); }
+  coin(t) { this.osc('square', 988, 988, t, 0.05, 0.08, null, { filter: 'lowpass', freq: 4000 }); this.osc('square', 1319, 1319, t + 0.05, 0.15, 0.08, null, { filter: 'lowpass', freq: 4000 }); },
+
+  // ---- presentación del logo: sub + barrido inverso + acorde brillante + destellos ----
+  intro(t) {
+    this.noise(t, 1.25, 0.22, 'bandpass', 200, 9000, null, { attack: 1.15, q: 0.8 });
+    this.osc('sine', 40, 90, t, 1.2, 0.18, null, { attack: 1.1 });
+    const h = t + 1.25;
+    this.osc('sine', 110, 30, h, 1.6, 1, null, { dist: true, rev: 0.6, glide: 0.6 });
+    this.noise(h, 0.6, 0.55, 'lowpass', 6000, 150, null, { rev: 0.7 });
+    for (const [f, d] of [[220, -8], [277.2, 6], [329.6, -4], [440, 9], [554.4, 0]]) this.osc('sawtooth', f, f, h, 2.2, 0.05, null, { detune: d, filter: 'lowpass', freq: 2600, attack: 0.01, rev: 0.7 });
+    [1760, 2217, 2637, 3520].forEach((f, i) => this.osc('sine', f, f, h + 0.25 + i * 0.09, 0.6, 0.05, null, { rev: 0.8 }));
+  },
+  step(t, p) { this.noise(t, 0.035, 0.12, 'lowpass', 700 * p, 200); this.osc('sine', 120 * p, 60, t, 0.04, 0.08); },
+  grip(t) { this.noise(t, 0.12, 0.35, 'bandpass', 700, 300, null, { q: 3 }); this.osc('triangle', 180, 140, t, 0.1, 0.12); },
+  cast(t, p) { this.osc('sine', 500 * p, 1400 * p, t, 0.22, 0.1, null, { rev: 0.4 }); this.noise(t, 0.25, 0.12, 'bandpass', 1500, 7000, null, { q: 2, attack: 0.08 }); },
+  ultCast(t) {
+    for (const [f, d] of [[55, -12], [55, 12], [82.4, 0], [110, 7]]) this.osc('sawtooth', f, f * 0.97, t, 1.3, 0.07, null, { detune: d, filter: 'lowpass', freq: 900, attack: 0.03, dist: true, rev: 0.5 });
+    this.noise(t, 0.7, 0.3, 'bandpass', 300, 7000, null, { attack: 0.6, rev: 0.4 });
+  },
+  sigmaHum(t) { for (const f of [65.4, 98, 130.8]) this.osc('sawtooth', f, f, t, 1.1, 0.045, null, { filter: 'lowpass', freq: 500, attack: 0.25, rev: 0.6 }); },
+  roundGong(t) { for (const [f, a] of [[146, 0.3], [233, 0.18], [349, 0.12], [587, 0.07], [811, 0.05]]) this.osc('sine', f, f * 0.995, t, 2.2, a, null, { rev: 0.7 }); this.noise(t, 0.08, 0.3, 'bandpass', 2500); },
+  fightHit(t) { this.osc('sine', 150, 38, t, 0.6, 1, null, { dist: true, rev: 0.4, glide: 0.25 }); this.noise(t, 0.35, 0.6, 'lowpass', 5000, 300, null, { rev: 0.5 }); this.noise(t, 0.12, 0.5, 'bandpass', 1900, 1200); },
+  koSting(t) { [523, 392, 262, 131].forEach((f, i) => this.osc('square', f, f * 0.98, t + i * 0.1, 0.35, 0.07, null, { filter: 'lowpass', freq: 1800, rev: 0.5 })); },
+  tick(t) { this.osc('square', 1500, 1500, t, 0.02, 0.06, null, { filter: 'highpass', freq: 800 }); },
+  woodKnock(t, p) { this.osc('sine', 520 * p, 420 * p, t, 0.09, 0.5, null, { glide: 0.05 }); this.osc('triangle', 1040 * p, 900 * p, t, 0.05, 0.2); this.noise(t, 0.03, 0.4, 'bandpass', 1800 * p, null, null, { q: 4 }); },
+  bubbles(t) { for (let i = 0; i < 9; i++) { const f = 400 + Math.random() * 900; this.osc('sine', f, f * 2.2, t + i * 0.045, 0.05, 0.1); } },
+  chomp(t) { this.noise(t, 0.06, 0.6, 'bandpass', 900, 300, null, { q: 2 }); this.osc('square', 140, 60, t, 0.08, 0.25, null, { filter: 'lowpass', freq: 700 }); },
+  planeEngine(t, p, o) { const d = o.dur || 1.4; for (const det of [-14, 0, 14]) this.osc('sawtooth', 92, 120, t, d, 0.05, null, { detune: det, filter: 'lowpass', freq: 1200, attack: 0.3 }); this.noise(t, d, 0.1, 'bandpass', 600, 1200, null, { attack: 0.3 }); },
+  bombWhistle(t) { this.osc('sine', 2200, 500, t, 0.9, 0.12, null, { glide: 0.9 }); },
+  musicBox(t) { [1046, 1318, 1568, 2093, 1568, 1318].forEach((f, i) => { this.osc('sine', f, f, t + i * 0.11, 0.5, 0.08, null, { rev: 0.6 }); this.osc('sine', f * 2.01, f * 2.01, t + i * 0.11, 0.2, 0.025); }); },
+  pirouette(t) { this.noise(t, 0.45, 0.25, 'bandpass', 800, 4000, null, { q: 3, attack: 0.2 }); [1568, 2093].forEach((f, i) => this.osc('sine', f, f, t + 0.2 + i * 0.08, 0.3, 0.06, null, { rev: 0.5 })); },
+  fingerSnap(t, p) { this.noise(t, 0.018, 0.9, 'highpass', 3500 * p); this.noise(t, 0.05, 0.3, 'bandpass', 2200 * p, null, null, { q: 5, rev: 0.4 }); },
+  swish(t, p) { this.noise(t, 0.2, 0.18, 'bandpass', 900 * p, 2400 * p, null, { q: 1.2, attack: 0.05 }); },
+  kissPop(t) { this.osc('sine', 600, 1800, t, 0.05, 0.25); this.noise(t, 0.02, 0.4, 'highpass', 3000); },
+  rizzChime(t) { [784, 988, 1175].forEach((f, i) => this.osc('triangle', f, f, t + i * 0.05, 0.4, 0.07, null, { rev: 0.6 })); },
+  mewClick(t) { this.osc('square', 220, 330, t, 0.04, 0.08, null, { filter: 'lowpass', freq: 1200 }); this.osc('sine', 1760, 1760, t + 0.05, 0.25, 0.06, null, { rev: 0.5 }); },
+  stomp(t) { this.osc('sine', 70, 35, t, 0.3, 0.8, null, { dist: true }); this.noise(t, 0.12, 0.4, 'lowpass', 900, 100); },
+  tauntHorn(t) { for (const f of [233, 294, 349]) this.osc('square', f, f * 0.98, t, 0.32, 0.05, null, { filter: 'lowpass', freq: 1600 }); },
+  scratch(t) { this.noise(t, 0.12, 0.35, 'bandpass', 600, 2400, null, { q: 4 }); this.noise(t + 0.12, 0.1, 0.3, 'bandpass', 2400, 500, null, { q: 4 }); },
+  rewind(t) { this.osc('sawtooth', 1200, 200, t, 0.45, 0.06, null, { filter: 'lowpass', freq: 3000 }); this.noise(t, 0.45, 0.15, 'bandpass', 3000, 300, null, { q: 2 }); },
+  sparkle(t) { for (let i = 0; i < 5; i++) { const f = 2000 + Math.random() * 2500; this.osc('sine', f, f, t + i * 0.04, 0.15, 0.04, null, { rev: 0.6 }); } },
+  heartbeat(t) { this.osc('sine', 60, 40, t, 0.12, 0.6); this.osc('sine', 55, 38, t + 0.18, 0.14, 0.45); }
 };
 
 // ---------------- pistas phonk ----------------

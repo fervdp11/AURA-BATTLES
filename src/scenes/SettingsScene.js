@@ -25,15 +25,13 @@ export class SettingsScene extends Phaser.Scene {
   }
   main() {
     const st = Save.d.settings;
-    const sv = () => { Save.save(); Audio.setVolumes(st.music, st.sfx); Audio.voiceOn = st.voice; Audio.announcerOn = st.announcer; };
+    const sv = () => { Save.save(); Audio.setVolumes(st.music, st.sfx); };
     const vol = (k, dlt) => { st[k] = Math.max(0, Math.min(1, Math.round((st[k] + dlt) * 10) / 10)); sv(); if (k === 'sfx') Audio.play('hitMed'); };
     const tog = k => { st[k] = !st[k]; sv(); };
     const yn = v => (v ? 'SÍ' : 'NO');
     this.setMenu([
       { label: 'MÚSICA', value: () => Math.round(st.music * 100) + '%', onLeft: () => vol('music', -0.1), onRight: () => vol('music', 0.1), help: 'Volumen de la música phonk generada en tiempo real.' },
-      { label: 'EFECTOS', value: () => Math.round(st.sfx * 100) + '%', onLeft: () => vol('sfx', -0.1), onRight: () => vol('sfx', 0.1), help: 'Volumen de golpes, público y efectos.' },
-      { label: 'VOCES DE LOS MEMES', value: () => yn(st.voice), onLeft: () => tog('voice'), onRight: () => tog('voice'), help: 'Frases habladas al usar técnicas (síntesis de voz del navegador).' },
-      { label: 'ANUNCIADOR', value: () => yn(st.announcer), onLeft: () => tog('announcer'), onRight: () => tog('announcer'), help: 'Voz que anuncia rondas, K.O. y victorias.' },
+      { label: 'EFECTOS', value: () => Math.round(st.sfx * 100) + '%', onLeft: () => vol('sfx', -0.1), onRight: () => vol('sfx', 0.1), help: 'Volumen de golpes, auras y efectos (sin voces).' },
       { label: 'TEMBLOR DE PANTALLA', value: () => Math.round(st.shake * 100) + '%', onLeft: () => { st.shake = Math.max(0, Math.round((st.shake - 0.25) * 4) / 4); sv(); }, onRight: () => { st.shake = Math.min(1.5, Math.round((st.shake + 0.25) * 4) / 4); sv(); }, help: 'Intensidad del screen shake.' },
       { label: 'NÚMEROS DE DAÑO', value: () => yn(st.damageNumbers), onLeft: () => tog('damageNumbers'), onRight: () => tog('damageNumbers') },
       { label: 'CALIDAD GRÁFICA', value: () => st.quality.toUpperCase(), onLeft: () => { st.quality = st.quality === 'alta' ? 'baja' : 'alta'; sv(); }, onRight: () => { st.quality = st.quality === 'alta' ? 'baja' : 'alta'; sv(); }, help: 'ALTA: bloom, viñeta y todas las partículas. BAJA: para equipos modestos.' },
