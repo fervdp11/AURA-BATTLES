@@ -85,11 +85,10 @@ export class HUDScene extends Phaser.Scene {
   startTutorial() {
     const k = a => keyName(Input.codesFor(a)[0]);
     const p = this.p;
-    const x0 = p.x;
     this.tut = {
       i: 0, used: new Set(),
       steps: [
-        { t: `Muévete con ${k('left')} ${k('right')}`, ok: () => Math.abs(p.x - x0) > 120 },
+        { t: `Muévete con ${k('left')} ${k('right')}`, ok: () => { if (this.b.phase !== 'fight') return false; if (this.tut.x0 === undefined) this.tut.x0 = p.x; return Math.abs(p.x - this.tut.x0) > 120; } },
         { t: `Salta con ${k('up')} (y otra vez en el aire para doble salto)`, ok: () => p.state === 'air' },
         { t: `Combo básico: ${k('light')}, ${k('light')}, ${k('light')} cerca del muñeco`, ok: () => this.tut.used.has('hook') },
         { t: `Ataque fuerte: ${k('heavy')}  ·  Lanzador: ${k('down')} + ${k('heavy')}`, ok: () => this.tut.used.has('roundhouse') || this.tut.used.has('uppercut') },

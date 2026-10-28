@@ -290,7 +290,7 @@ export class Battle {
         if (a.invuln > 0 && a.state === 'attack' && a.move && a.move.def.passThrough) continue;
         if (c.invuln > 0 && c.state === 'attack' && c.move && c.move.def.passThrough) continue;
         if (Math.abs(a.y - c.y) > 70) continue;
-        const min = 34 * (a.scale + c.scale) / 2;
+        const min = 46 * (a.scale + c.scale) / 2;
         const dx = c.x - a.x;
         if (Math.abs(dx) < min) {
           const push = (min - Math.abs(dx)) / 2;

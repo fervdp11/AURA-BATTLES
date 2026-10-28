@@ -30,11 +30,11 @@ export class CustomScene extends Phaser.Scene {
       { label: '¡LUCHAR!', color: '#ffd166', onSelect: () => this.start(ARENA_OPTS, TIMES) }
     ];
     panel(this, 620, 110, 620, 540, { alpha: 0.7 });
-    this.name = txt(this, 930, 130, '', 40, '#ffffff', { ox: 0.5 });
-    this.sub = txt(this, 930, 180, '', 20, '#ffd166', { ox: 0.5 });
-    this.quote = txt(this, 930, 212, '', 18, '#e8e4ff', { ox: 0.5, body: true, wrap: 560, align: 'center' });
-    this.moves = txt(this, 640, 470, '', 16, '#c9c3e6', { body: true, wrap: 580 });
-    this.prev = new StickPreview(this, 930, 440, botProfile(ALL_BOTS[0]), { scale: 1.6, facing: -1, anim: 'guard', depth: 6 });
+    this.name = txt(this, 645, 130, '', 40, '#ffffff', { wrap: 360 });
+    this.sub = txt(this, 645, 230, '', 20, '#ffd166', { wrap: 360 });
+    this.quote = txt(this, 645, 270, '', 18, '#e8e4ff', { body: true, wrap: 340 });
+    this.moves = txt(this, 645, 420, '', 16, '#c9c3e6', { body: true, wrap: 340 });
+    this.prev = new StickPreview(this, 1110, 590, botProfile(ALL_BOTS[0]), { scale: 1.5, facing: -1, anim: 'guard', depth: 6 });
     this.menu = new MenuList(this, 50, 120, items, { w: 520, h: 52, gap: 8, onBack: () => go(this, 'Menu'), onChange: () => this.refresh() });
     this.refresh();
     keyHints(this, '↑↓ elegir · ←→ cambiar · ENTER luchar · ESC volver');
@@ -42,13 +42,13 @@ export class CustomScene extends Phaser.Scene {
   }
   refresh() {
     const b = ALL_BOTS[this.st.bot];
-    this.prev.setProfile(botProfile(b)); this.prev.scale = 1.6 * (b.scale || 1);
+    this.prev.setProfile(botProfile(b)); this.prev.scale = 1.5 * Math.min(1.25, b.scale || 1);
     this.name.setText(b.name).setColor(b.boss ? '#ff4d6d' : '#ffffff');
     const lv = this.st.diff < 0 ? b.level : this.st.diff;
     this.sub.setText(`${b.boss ? 'JEFE · ' : ''}${LEVELS[lv].name.toUpperCase()} · ${STYLES[b.style].name.toUpperCase()}`).setColor(LEVELS[lv].color);
     this.quote.setText(`"${b.quote}"`);
     const lo = b.loadout;
-    this.moves.setText('Técnicas: ' + [lo.special, lo.specialF, lo.specialD, lo.skill1, lo.skill2].map(id => MOVES[id] ? MOVES[id].name : '?').join(' · ') + '\nUltimate: ' + (MOVES[lo.ult] ? MOVES[lo.ult].name : '?'));
+    this.moves.setText('TÉCNICAS\n' + [lo.special, lo.specialF, lo.specialD, lo.skill1, lo.skill2].map(id => '· ' + (MOVES[id] ? MOVES[id].name : '?')).join('\n') + '\n\nULTIMATE\n· ' + (MOVES[lo.ult] ? MOVES[lo.ult].name : '?'));
   }
   start(ARENA_OPTS, TIMES) {
     const st = this.st;
