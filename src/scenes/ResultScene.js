@@ -4,7 +4,7 @@ import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, StickPreview, MenuBG, go, fadeIn, toast, keyHints } from '../ui/UI.js';
 import { playerProfile, quickOpponents } from '../core/Match.js';
-import { rankFor } from '../data/progression.js';
+import { rankFor, auraText } from '../data/progression.js';
 import { PATH, stageById, chaptersCleared } from '../data/path.js';
 import { botById } from '../data/bots.js';
 
@@ -45,7 +45,9 @@ export class ResultScene extends Phaser.Scene {
       const bot = spec.enemies[0];
       txt(this, 640, 128, `${bot.name}: "${bot.quote}"`, 18, '#ff9fb0', { ox: 0.5, body: true, wrap: 900, align: 'center' });
     }
-    this.prev = new StickPreview(this, 250, 600, prof, { scale: 2.4, anim: win || surv ? (prof.celebration || 'flex') : 'dizzy', glow: win ? 1.4 : 0.4 });
+    this.prev = new StickPreview(this, 250, 640, prof, { scale: 2.0, anim: win || surv ? (prof.celebration || 'flex') : 'dizzy', glow: win ? 1.4 : 0.4 });
+    // aura final (-∞ a +∞)
+    if (info && info.final && !training) this.auraFinal(240, 214, info.final, 1);
     // estadísticas
     panel(this, 480, 150, 360, 370, { alpha: 0.85 });
     const st = info ? info.stats : {};
@@ -105,6 +107,7 @@ export class ResultScene extends Phaser.Scene {
     this.prevB = new StickPreview(this, 1110, 600, profs[1], { scale: 2.2, facing: -1, anim: w === 1 ? (profs[1].celebration || 'flex') : loserAnim, glow: w === 1 ? 1.4 : 0.3 });
     txt(this, 170, 630, 'J1 · ' + info.names[0], 22, cols[0], { ox: 0.5 });
     txt(this, 1110, 630, 'J2 · ' + info.names[1], 22, cols[1], { ox: 0.5 });
+    if (info.final) { this.auraFinal(170, 210, info.final[0], 0.8); this.auraFinal(1110, 210, info.final[1], 0.8); }
     // marcador de la sesión
     const sc = spec.score || [0, 0];
     panel(this, 390, 150, 500, 380, { alpha: 0.88 });
@@ -130,6 +133,33 @@ export class ResultScene extends Phaser.Scene {
     fadeIn(this);
     for (let i = 0; i < 4; i++) this.time.delayedCall(i * 300, () => this.confetti());
   }
+  // contador animado del aura final: sube/baja hasta su valor; los infinitos se disparan y estallan en ∞
+  auraFinal(x, y, F, k = 1) {
+    const box = this.add.graphics().setDepth(20);
+    const col = Phaser.Display.Color.HexStringToColor(F.color).color;
+    box.fillStyle(0x07040f, 0.88); box.fillRoundedRect(x - 190 * k, y - 62 * k, 380 * k, 124 * k, 14);
+    box.lineStyle(3, col, 1); box.strokeRoundedRect(x - 190 * k, y - 62 * k, 380 * k, 124 * k, 14);
+    txt(this, x, y - 44 * k, 'AURA FINAL', 18 * k, '#c9c3e6', { ox: 0.5, oy: 0.5 }).setDepth(21);
+    const num = txt(this, x, y + 2 * k, '0', 54 * k, F.color, { ox: 0.5, oy: 0.5, strokeThickness: 7 }).setDepth(21);
+    const lab = txt(this, x, y + 42 * k, F.label, 18 * k, F.color, { ox: 0.5, oy: 0.5 }).setDepth(21).setAlpha(0);
+    num.setShadow(0, 0, F.color, 18, true, true);
+    let t = 0;
+    const inf = !Number.isFinite(F.value);
+    const ev = this.time.addEvent({ delay: 16, loop: true, callback: () => {
+      t++;
+      const p = Math.min(1, t / 70), e = 1 - Math.pow(1 - p, 3);
+      if (inf) {
+        const big = Math.round(Math.pow(10, e * 9)) * Math.sign(F.value);
+        num.setText(p < 1 ? auraText(big) : auraText(F.value));
+        if (p >= 1) { num.setScale(1.6); this.tweens.add({ targets: num, scale: 1, duration: 300, ease: 'Back.easeOut' }); this.cameras.main.flash(250, 255, 255, 255); Audio.play(F.value > 0 ? 'victory' : 'koSting'); }
+      } else {
+        num.setText(auraText(F.value * e));
+        if (t % 4 === 0 && p < 1) Audio.play('coin', { minGap: 0.05, pitch: F.value >= 0 ? 1 + e * 0.5 : 1 - e * 0.4 });
+      }
+      if (p >= 1) { ev.remove(); this.tweens.add({ targets: lab, alpha: 1, duration: 300 }); }
+    } });
+  }
+
   toStage(s) {
     const enemies = s.enemies.map(botById);
     go(this, 'Versus', { spec: { mode: 'path', stageId: s.id, enemies, rounds: s.rounds, arena: s.arena, boss: !!s.boss, pathTitle: s.title } });

@@ -1,7 +1,7 @@
 import { GROUND_Y, WALL_L, WALL_R, MAX_ENERGY, JUGGLE_LIMIT, COMBO_HIT_LIMIT, ARENA_W } from './constants.js';
 import { Fighter } from './Fighter.js';
 import { bodySurface, shiftJoints } from './skeleton.js';
-import { MOVES } from './moves.js';
+import { MOVES, FINISHER_SPECS } from './moves.js';
 import { STATUS } from './status.js';
 import { emptyInput } from './constants.js';
 
@@ -197,6 +197,14 @@ export class Battle {
     if (f.aura > 0 || !f.alive) return;
     if (f.state === 'locked') { f.aura = 1; if (f.lockedBy && f.lockedBy.move && f.lockedBy.move.lock) f.lockedBy.move.lock.lethal = true; return; }
     if (this.training && f.infiniteAura) { f.aura = 1; return; }
+    // golpe que gana el combate: si el atacante tiene un remate equipado, se juega la animación de remate
+    if (attacker && attacker !== f && attacker.alive && attacker.finisher && attacker.finisher !== 'none' && !this.finisherUsed && this.phase === 'fight' && !this.opts.endless &&
+        attacker.state !== 'locked' && this.alive(f.team).length === 1 && this.wins[attacker.team] + 1 >= this.roundsToWin && MOVES['fin_' + attacker.finisher] && FINISHER_SPECS[attacker.finisher]) {
+      f.aura = 1;
+      this.finisherUsed = true;
+      this.startFinisher(attacker, f);
+      return;
+    }
     f.aura = 0;
     f.alive = false;
     f.koFrame = this.frame;
@@ -218,6 +226,22 @@ export class Battle {
       this.phase = 'ko'; this.phaseT = 0;
       this.slowmo = 110; this.slowScale = 0.3;
     }
+  }
+
+  startFinisher(a, d) {
+    for (const q of [a, d]) {
+      if (q.move && q.move.lock) this.releaseLock(q, q.move.lock, true);
+      q.move = null; q.status.length = 0; q.vx = 0; q.vy = 0;
+      if (!q.grounded) { q.y = GROUND_Y; q.grounded = true; }
+    }
+    a.facing = Math.sign(d.x - a.x) || a.facing; d.facing = -a.facing;
+    for (const q of this.fighters) if (q !== a && q !== d && q.move && q.move.lock) this.releaseLock(q, q.move.lock, true);
+    this.projectiles.length = 0;
+    a.startMove('fin_' + a.finisher, { free: true });
+    this.startLock(a, d, FINISHER_SPECS[a.finisher](a, d, this));
+    if (a.move && a.move.lock) a.move.lock.lethal = true;
+    a.stats.finisher = a.finisher;
+    this.emit('finisher', { a, f: d, id: a.finisher });
   }
 
   setDefeat(f) {
@@ -269,8 +293,9 @@ export class Battle {
     this.timeStop = null; this.domain = null;
     // los señuelos (clones) no sobreviven al cambio de ronda
     this.fighters = this.fighters.filter(f => !f.decoyOf);
+    this.finisherUsed = false;
     for (const f of this.fighters) {
-      f.alive = true; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
+      f.alive = true; f.toSpace = false; f.pantsDown = false; f.visible = true; f.squashX = f.squashY = 1; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
       f.status.length = 0; f.move = null; f.grounded = true; f.facing = f.team === 0 ? 1 : -1;
       f.combo = { hits: 0, dmg: 0, t: 0 }; f.comboTaken = 0; f.juggle = 0; f.usedOnce = {}; f.cool = {};
       f.energy = Math.min(f.energy + 25, MAX_ENERGY);
@@ -739,6 +764,7 @@ export class Battle {
       d.vx = dir * end.kb[0]; d.vy = end.kb[1]; d.knockdownOnLand = end.knockdown !== false; d.wallBounce = !!end.wallBounce;
       d.juggle = JUGGLE_LIMIT - 1;
       if (end.status) d.addStatus(end.status.id, end.status.frames, {}, a);
+      if (end.space) d.toSpace = true;
       this.emit('lockEnd', { a, f: d });
     }
     if (a.move && a.move.lock === L) a.move.lock = null;

@@ -7,6 +7,7 @@ import { ARENAS } from '../view/Arena.js';
 import { buildBattle, pickArena, survivalWave, botProfile } from '../core/Match.js';
 import { AIController } from '../sim/AI.js';
 import { go } from '../ui/UI.js';
+import { finalAura } from '../data/progression.js';
 import { MOVES } from '../sim/moves.js';
 
 const DUMMY = { id: 'dummy', name: 'Muñeco de Prácticas', style: 'balanced', level: 3, accessory: 'none', color: '#d4a373', aura: '#ffffff', accent: '#8d5524', quote: '...', celebration: 'bow', scale: 1, maxAura: 1000, loadout: { special: 'sixSeven', specialF: 'fakeHandshake', specialD: 'siuuu', skill1: 'rizz', skill2: 'hitTheWoah', ult: 'sixSevenBarrage' } };
@@ -119,6 +120,8 @@ export class FightScene extends Phaser.Scene {
       const vs = Save.d.versusStats || (Save.d.versusStats = { matches: 0, p1: 0, p2: 0 });
       vs.matches++; vs[result.winnerTeam === 0 ? 'p1' : 'p2']++; Save.save();
       const info = { winner: result.winnerTeam, rounds: result.rounds, frames: this.battle.frame, stats: [{ ...a.stats }, { ...b2.stats }], names: [a.name, b2.name], aura: [a.aura / a.maxAura, b2.aura / b2.maxAura] };
+      // aura final de cada jugador (de -∞ a +∞)
+      info.final = [a, b2].map((q, i) => { const o = i ? a : b2, won = result.winnerTeam === i; return finalAura({ stats: q.stats, opp: o.stats, win: won, perfect: won && (o.stats.dmg || 0) <= 0, shutout: !won && (q.stats.dmg || 0) <= 0, level: 4, finisher: !!q.stats.finisher }); });
       this.time.delayedCall(400, () => go(this, 'Result', { spec: { ...spec, score }, result, info, rewards: null }));
       return;
     }
@@ -130,6 +133,8 @@ export class FightScene extends Phaser.Scene {
       charms: this.battle.charmsByPlayer || 0, kos: this.kos
     };
     if (spec.mode === 'survival') info.win = false;
+    info.final = finalAura({ stats: p.stats, win: info.win, perfect: !!result.perfect && info.win, shutout: !info.win && spec.mode !== 'survival' && (p.stats.dmg || 0) <= 0, level: info.level, finisher: !!p.stats.finisher, enemies: info.enemies });
+    if (spec.mode === 'survival') info.final.value += (info.waves || 0) * 400;
     const rewards = spec.mode === 'training' ? null : Save.recordMatch(info);
     this.time.delayedCall(400, () => go(this, 'Result', { spec, result, info, rewards }));
   }

@@ -6,7 +6,7 @@ import { txt, StickPreview, MenuBG, go, fadeIn } from '../ui/UI.js';
 import { playerProfile, botProfile } from '../core/Match.js';
 import { BOTS, BOSSES } from '../data/bots.js';
 import { BODY_COLORS, AURA_COLORS } from '../data/progression.js';
-import { MOVES, SPECIAL_IDS, ULT_IDS } from '../sim/moves.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS, FINISHERS } from '../sim/moves.js';
 import { ARENAS } from '../view/Arena.js';
 import { hex } from '../view/StickRenderer.js';
 
@@ -55,6 +55,7 @@ export class LocalSetupScene extends Phaser.Scene {
     const c = this.R[ci];
     const p = { i, ci, ready: false, cur: 0, curY: 0, bump: 0,
       color: s.color || c.profile.color, accent: s.accent || c.profile.accent, aura: s.aura || c.profile.aura,
+      finisher: s.finisher && (FINISHERS[s.finisher] || s.finisher === 'none') ? s.finisher : i === 0 ? 'kickSpace' : 'pantsDown',
       loadout: s.loadout && SLOTS.every(([k]) => MOVES[s.loadout[k]]) ? { ...s.loadout } : { ...c.loadout } };
     return p;
   }
@@ -70,7 +71,8 @@ export class LocalSetupScene extends Phaser.Scene {
       { k: 'color', label: 'COLOR', value: () => '', swatch: hex(p.color) },
       { k: 'accent', label: 'ACENTO', value: () => '', swatch: hex(p.accent) },
       { k: 'aura', label: 'AURA', value: () => (AURA_COLORS.find(a => a.c === p.aura) || {}).name || 'Propia', swatch: hex(p.aura) },
-      ...SLOTS.map(([k, l]) => ({ k: 'slot', slot: k, label: l, value: () => (MOVES[p.loadout[k]] || {}).name || '-' }))
+      ...SLOTS.map(([k, l]) => ({ k: 'slot', slot: k, label: l, value: () => (MOVES[p.loadout[k]] || {}).name || '-' })),
+      { k: 'finisher', label: 'REMATE K.O.', value: () => (p.finisher === 'none' ? 'NINGUNO' : FINISHERS[p.finisher].name) }
     ];
     if (p.i === 0) out.push(
       { k: 'rounds', label: 'RONDAS (reglas)', value: () => (ROUNDS[this.rules.rounds] === 1 ? 'A 1' : 'AL MEJOR DE ' + (ROUNDS[this.rules.rounds] * 2 - 1)) },
@@ -88,10 +90,10 @@ export class LocalSetupScene extends Phaser.Scene {
     p.head = txt(this, x0 + 20, 100, 'JUGADOR ' + (i + 1), 30, PCSS[i]);
     p.readyT = txt(this, x0 + 580, 104, '', 22, '#7bd389', { ox: 1 });
     p.labels = []; p.values = [];
-    for (let r = 0; r < 15; r++) {
+    for (let r = 0; r < 16; r++) {
       p.labels.push(txt(this, 0, 0, '', 16, '#c9c3e6', { oy: 0.5, body: true, bold: true }).setDepth(10));
       p.values.push(txt(this, 0, 0, '', 17, '#ffffff', { ox: 0.5, oy: 0.5 }).setDepth(10));
-      const zone = this.add.zone(x0 + 250, 150 + r * 31, 330, 29).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(12);
+      const zone = this.add.zone(x0 + 250, 146 + r * 29, 330, 29).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(12);
       zone.on('pointerdown', ptr => { const rs = this.rows(p); if (r >= rs.length) return; p.cur = r; this.act(p, ptr.x < x0 + 415 ? 'left' : 'right', true); });
     }
     const k = a => keyName(Input.codesFor(a, PROF[i])[0]);
@@ -148,6 +150,7 @@ export class LocalSetupScene extends Phaser.Scene {
         p.loadout[row.slot] = pool[i];
         break;
       }
+      case 'finisher': { const L = [...Object.keys(FINISHERS), 'none']; p.finisher = L[(L.indexOf(p.finisher) + d + L.length) % L.length]; break; }
       case 'rounds': this.rules.rounds = (this.rules.rounds + d + ROUNDS.length) % ROUNDS.length; break;
       case 'time': this.rules.time = (this.rules.time + d + TIMES.length) % TIMES.length; break;
       case 'arena': this.rules.arena = (this.rules.arena + d + ARENAS.length + 1) % (ARENAS.length + 1); break;
@@ -156,7 +159,7 @@ export class LocalSetupScene extends Phaser.Scene {
 
   saveSetup() {
     const s = { rounds: this.rules.rounds, time: this.rules.time, arena: this.rules.arena };
-    this.P.forEach(p => { s['p' + (p.i + 1)] = { char: this.R[p.ci].id, color: p.color, accent: p.accent, aura: p.aura, loadout: { ...p.loadout } }; });
+    this.P.forEach(p => { s['p' + (p.i + 1)] = { char: this.R[p.ci].id, color: p.color, accent: p.accent, aura: p.aura, finisher: p.finisher, loadout: { ...p.loadout } }; });
     Save.d.versusSetup = s; Save.save();
   }
 
@@ -169,7 +172,7 @@ export class LocalSetupScene extends Phaser.Scene {
       if (n === 0) {
         this.countTxt.setText('¡A PELEAR!').setScale(1.6); this.tweens.add({ targets: this.countTxt, scale: 1, duration: 200 });
         Audio.play('fightHit');
-        const [a, b] = this.P.map(p => ({ profile: this.profileOf(p), loadout: { ...p.loadout } }));
+        const [a, b] = this.P.map(p => ({ profile: this.profileOf(p), loadout: { ...p.loadout }, finisher: p.finisher }));
         if (a.profile.name === b.profile.name) b.profile.name += ' (J2)';
         const spec = { mode: 'versus', p1: a, p2: b, enemies: [], rounds: ROUNDS[this.rules.rounds], timer: TIMES[this.rules.time], arena: this.rules.arena === 0 ? 'random' : ARENAS[this.rules.arena - 1].id, score: [0, 0] };
         this.time.delayedCall(450, () => go(this, 'Versus', { spec }));
@@ -199,7 +202,7 @@ export class LocalSetupScene extends Phaser.Scene {
       g.fillStyle(col, 0.12); g.fillEllipse(x0 + 128, 600, 180, 22);
       p.curY += (p.cur - p.curY) * 0.3;
       p.bump *= 0.8;
-      const ry = r => 150 + r * 31;
+      const ry = r => 146 + r * 29;
       g.fillStyle(col, 0.2); g.fillRoundedRect(x0 + 246, ry(p.curY) - 1, 342, 30, 8);
       g.fillStyle(col, 1); g.fillRect(x0 + 246, ry(p.curY) + 3, 4, 22);
       for (let r = 0; r < p.labels.length; r++) {

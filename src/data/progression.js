@@ -48,7 +48,7 @@ const TIER_OF = {
 };
 const MOVE_TIERS = {
   1: ['snapWalk', 'fakeGreeting', 'doubleSlap', 'shoulderBrush', 'defaultDance', 'sigmaStare', 'noReaction', 'fakeHighFive', 'disrespectfulDodge', 'ratio', 'aimbot', 'emotionalDamage', 'dabOn', 'backflipDiss', 'skillIssue', 'ggEz', 'hitTheWoah', 'bananaSlip'],
-  2: ['sixSevenSlam', 'handshakeHeadbutt', 'mewingGlare', 'rizzLean', 'tralalero', 'headPalm', 'auraWalk', 'unoReverse', 'npcMode', 'noLook360', 'phantomDap', 'auraTheft', 'skibidiSpin', 'flossShield', 'sheesh', 'fanumTax', 'bruh', 'vineBoom', 'tungTung', 'clapBack', 'shush', 'goblinMode'],
+  2: ['teabag', 'sixSevenSlam', 'handshakeHeadbutt', 'mewingGlare', 'rizzLean', 'tralalero', 'headPalm', 'auraWalk', 'unoReverse', 'npcMode', 'noLook360', 'phantomDap', 'auraTheft', 'skibidiSpin', 'flossShield', 'sheesh', 'fanumTax', 'bruh', 'vineBoom', 'tungTung', 'clapBack', 'shush', 'goblinMode'],
   3: ['sigmaTurn', 'menacingPose', 'brrPatapim', 'liriliLarila', 'ballerinaCappuccina', 'nahIdWin', 'reverseAura', 'sigmaTeleport', 'crowdControl', 'touchGrass', 'caughtIn4K', 'gigachadJaw', 'mog', 'micDrop', 'dealWithIt', 'ballerinaSpin', 'holdUp', 'afk', 'auraFarming', 'rizzStorm', 'emoteCancel'],
   4: ['brainrotInvasion', 'dramaticEntrance', 'mainCharacter', 'delulu', 'bombasticSideEye', 'letHimCook', 'cooked', 'susVent', 'thisIsFine', 'stonks', 'narutoRun', 'bingChilling', 'ankleBreaker', 'speedrun', 'lagSpike', 'ohioMode', 'ultimateNonchalance', 'sigmaRule'],
   5: ['mainCharacterEnding', 'infiniteMewing', 'bigBrain', 'oraBarrage', 'omaeWaMou', 'falconPunch', 'rickroll', 'rageQuit', 'bombardiro', 'spidermanPoint', 'perfectlyBalanced', 'coffinDance', 'timeStop'],
@@ -151,3 +151,27 @@ export const TITLES = [
   { id: 'chill', name: 'Just a Chill Guy', req: { ach: 'wins10' } },
   { id: 'perfect', name: 'Intocable', req: { ach: 'perfect' } }
 ];
+
+// Aura final de la partida según cómo has jugado: puede ir de -∞ a +∞.
+// Victoria perfecta (sin recibir ni un golpe) = +∞; perder sin hacer ni un rasguño = -∞.
+export function finalAura({ stats = {}, win, perfect, shutout, level = 3, finisher = false, enemies = 1, opp = null }) {
+  if (perfect && win) return { value: Infinity, label: 'AURA INFINITA', color: '#ffd166' };
+  if (shutout && !win) return { value: -Infinity, label: 'AURA NEGATIVA INFINITA', color: '#ff2d55' };
+  const s = stats;
+  let v = (s.dmg || 0) * 1.2 - (s.taken || 0) * 0.9
+    + (s.maxCombo || 0) * 30 + (s.parries || 0) * 80 + (s.counters || 0) * 60 + (s.humiliations || 0) * 45
+    + (s.dodges || 0) * 15 + (s.ults || 0) * 60 + (s.specials || 0) * 6 - (s.whiffs || 0) * 4 - (s.blocks || 0) * 2;
+  v += win ? 600 + level * 120 + (enemies - 1) * 300 : -700 + level * 40;
+  if (finisher) v += 400;
+  if (opp && opp.humiliations) v -= opp.humiliations * 40;
+  v = Math.round(v);
+  const tiers = [[3000, 'AURA LEGENDARIA', '#ffd166'], [1800, 'AURA SIGMA', '#c084fc'], [900, 'MUCHA AURA', '#7df9ff'], [200, 'AURA DECENTE', '#7bd389'], [-200, 'AURA NEUTRA', '#c9c3e6'], [-1000, 'AURA NEGATIVA', '#ff9f1c'], [-Infinity, 'AURA EN LA RUINA', '#ff4d6d']];
+  const t = tiers.find(x => v >= x[0]);
+  return { value: v, label: t[1], color: t[2] };
+}
+export function auraText(v) {
+  if (v === Infinity) return '+∞';
+  if (v === -Infinity) return '-∞';
+  const a = Math.abs(Math.round(v)).toLocaleString('es-ES');
+  return (v >= 0 ? '+' : '-') + a;
+}

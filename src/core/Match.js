@@ -21,11 +21,11 @@ export function buildBattle(spec) {
   const fighters = [];
   // multijugador local: dos humanos, cada uno con su perfil de teclas
   if (spec.mode === 'versus') {
-    fighters.push({ team: 0, profile: { ...spec.p1.profile, scale: 1 }, loadout: { ...spec.p1.loadout }, human: true, ctrlProfile: 'p1' });
-    fighters.push({ team: 1, profile: { ...spec.p2.profile, scale: 1 }, loadout: { ...spec.p2.loadout }, human: true, ctrlProfile: 'p2' });
+    fighters.push({ team: 0, profile: { ...spec.p1.profile, scale: 1 }, loadout: { ...spec.p1.loadout }, human: true, ctrlProfile: 'p1', finisher: spec.p1.finisher });
+    fighters.push({ team: 1, profile: { ...spec.p2.profile, scale: 1 }, loadout: { ...spec.p2.loadout }, human: true, ctrlProfile: 'p2', finisher: spec.p2.finisher });
     return new Battle({ fighters, mode: 'versus', versus: true, timer: spec.timer ?? 99, roundsToWin: spec.rounds || 1, seed: (Math.random() * 1e9) | 0 });
   }
-  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0,
+  fighters.push({ team: 0, profile: playerProfile(), loadout: { ...d.loadout }, human: true, finisher: spec.mode === 'training' ? null : d.finisher, infiniteEnergy: spec.mode === 'training' && spec.infiniteEnergy, energy: spec.startEnergy || 0,
     controller: spec.aiPlayer ? new AIController({ level: spec.aiPlayer, style: 'balanced', seed: 99 }) : undefined });
   spec.enemies.forEach((bot, i) => {
     const level = spec.levelOverride ?? bot.level;

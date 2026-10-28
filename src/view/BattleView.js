@@ -4,7 +4,7 @@ import { Arena } from './Arena.js';
 import { FX } from './FX.js';
 import { drawFighter, drawBody, hex, shade, hsl, heartShape, mix } from './StickRenderer.js';
 import { Audio } from '../core/Audio.js';
-import { MOVES } from '../sim/moves.js';
+import { MOVES, FINISHERS } from '../sim/moves.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.js';
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
@@ -20,7 +20,7 @@ const MOVE_SFX = {
   perfectlyBalanced: ['fingerSnap'], letHimCook: ['fire'], caughtIn4K: ['shutter'], rickroll: ['tauntHorn'], ggEz: ['tauntHorn'], lBozo: ['tauntHorn'],
   broReallyThought: ['tauntHorn'], skillIssue: ['tauntHorn'], micDrop: ['swish'], dealWithIt: ['swish'], mainCharacter: ['sparkle'], ohioMode: ['glitch'],
   lagSpike: ['glitch'], afk: ['heartbeat'], thisIsFine: ['fire'], stonks: ['coin'], bigBrain: ['energyFull'], narutoRun: ['dash'], speedrun: ['dash'],
-  snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
+  teabag: ['swish'], snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
   sigmaTurn: ['sigmaHum'], rizzLean: ['rizzChime'], menacingPose: ['sigmaHum'], tralalero: ['bubbles'], brrPatapim: ['woodKnock'], liriliLarila: ['tick'],
   ballerinaCappuccina: ['musicBox', 'pirouette'], shoulderBrush: ['swish'], defaultDance: ['scratch'], headPalm: ['swish'], brainrotInvasion: ['ultCast', 'bubbles'], mainCharacterEnding: ['sigmaHum'],
   domainExpansion: ['domain'], finalAuraJudgment: ['ultCast'], ultimateNonchalance: ['sigmaHum'], coffinDance: ['tauntHorn'], auraOverload: ['ultCast']
@@ -107,6 +107,12 @@ export class BattleView {
     const list = [...b.fighters].sort((a, c) => (a.alive ? 1 : 0) - (c.alive ? 1 : 0) || (a.state === 'attack' ? 1 : 0) - (c.state === 'attack' ? 1 : 0));
     const multi = b.fighters.filter(f => !f.decoyOf).length > 2;
     for (const f of list) {
+      if (f.toSpace && !f.visible && !f._star) {
+        f._star = true;
+        const sx = this.cs.x + 160, sy = this.cs.y - 330 / this.cs.zoom;
+        this.fx.custom(90, (gt, gn, k, el) => { const r = 10 + Math.sin(el * 0.5) * 6; gt.fillStyle(0xffffff, k); gt.fillTriangle(sx - r * 2, sy, sx + r * 2, sy, sx, sy - 2); gt.fillTriangle(sx, sy - r * 2, sx, sy + r * 2, sx + 2, sy); gt.fillStyle(0x7df9ff, 0.4 * k); gt.fillCircle(sx, sy, r * 1.5); });
+        this.sfx('sparkle'); this.fx.text(sx, sy + 40, '✦ ' + f.name + ' ✦', { color: '#7df9ff', size: 22, hold: 1200 });
+      }
       const look = this.lookFor(f);
       if (f.decoyOf) Object.assign(look, this.lookFor(f.decoyOf));
       // sombra
@@ -169,11 +175,30 @@ export class BattleView {
         prop: this.propFor(f)
       });
       if (ox) { f.x -= ox; shiftAll(f.joints, -ox); }
+      if (f.pantsDown) this.drawBoxers(f, look, go);
       this.drawWeaponTrail(f, look);
       this.drawStatus(f, look, go, ga);
       // marcadores
       if (multi && f.alive && !f.decoyOf) this.drawTag(f, look, go);
     }
+  }
+
+  // calzoncillos de corazones y pantalones por los tobillos (remate "Bajada de Pantalones")
+  drawBoxers(f, look, g) {
+    const j = f.joints, s = f.scale;
+    const kx = (a, b, t) => a + (b - a) * t;
+    for (const k of ['n', 'f']) {
+      const x1 = j.hipX, y1 = j.hipY, x2 = kx(j.hipX, j[k + 'KneeX'], 0.45), y2 = kx(j.hipY, j[k + 'KneeY'], 0.45);
+      g.lineStyle(17 * s, 0x0a0a14, 1); g.lineBetween(x1, y1, x2, y2);
+      g.lineStyle(14 * s, 0xffffff, 1); g.lineBetween(x1, y1, x2, y2);
+      heartShape(g, kx(x1, x2, 0.55), kx(y1, y2, 0.55), 3 * s, 0xff3b6b, 1);
+      // pantalón arrugado en el tobillo
+      g.fillStyle(0x0a0a14, 1); g.fillEllipse(j[k + 'FootX'], j[k + 'FootY'] - 7 * s, 26 * s, 12 * s);
+      g.fillStyle(shade(look.accent, 0.7), 1); g.fillEllipse(j[k + 'FootX'], j[k + 'FootY'] - 7 * s, 22 * s, 9 * s);
+    }
+    g.fillStyle(0xffffff, 1); g.fillCircle(j.hipX, j.hipY, 10 * s);
+    heartShape(g, j.hipX + f.facing * 2 * s, j.hipY - 2 * s, 3.4 * s, 0xff3b6b, 1);
+    g.fillStyle(0xff3b6b, 1); g.fillRect(j.hipX - 11 * s, j.hipY - 9 * s, 22 * s, 3 * s);
   }
 
   drawTag(f, look, g) {
@@ -201,6 +226,7 @@ export class BattleView {
       case 'micDrop': return mf < 16 ? mic : null;
       case 'bonk': case 'tungTung': return bat;
       case 'cooked': return lock ? pan : null;
+      case 'fin_bonkGround': return bat;
       case 'thisIsFine': return mug;
       case 'coffinDance': return lock ? coffin : null;
       case 'stonks': return null;
@@ -586,6 +612,12 @@ export class BattleView {
         this.dimTarget = 0.35;
         break;
       }
+      case 'finisher': {
+        const F = FINISHERS[e.id];
+        this.scene.events.emit('ultBanner', { f: e.a, def: { name: 'REMATE · ' + (F ? F.name : ''), color: '#ffd166', anim: [[0, 'guard']] } });
+        this.sfx('ultCast'); this.duck(2, 0.3); this.dimTarget = 0.45; S.time.delayedCall(1500, () => { this.dimTarget = 0; });
+        break;
+      }
       case 'domainEnd': this.dimTarget = 0; this.domainOwner = null; break;
       case 'blind': this.scene.events.emit('flash', 0xffffff, 400); break;
       case 'fx': this.namedFx(e); break;
@@ -623,6 +655,8 @@ export class BattleView {
     switch (e.fx) {
       case 'slap': fx.text(e.x, e.y - 30, '¡ZAS!', { color: '#ffffff', size: 48 }); this.sfx('slap'); this.shake('heavy'); fx.emit('star', e.x, e.y, 10, 0xffffff); break;
       case 'bonk': fx.text(e.x, e.y - 50, 'BONK', { color: '#d6a46b', size: 40 }); this.sfx('bonk'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 8, 0xffe066); break;
+      case 'boing': fx.text(e.x, e.y - 40, 'BOING', { color: '#ff66cc', size: 32, angle: (Math.random() - 0.5) * 24 }); this.sfx('pop', { pitch: 0.6 }); this.sfx('slap', { pitch: 1.6, gain: 0.5 }); fx.emit('heart', e.x, e.y, 3, 0xff66cc); break;
+      case 'spaceKick': fx.text(e.x, e.y - 60, '¡AL ESPACIO!', { color: '#7df9ff', size: 54 }); this.sfx('hitMega'); this.sfx('vineBoom'); this.shake('mega'); this.impactFrame(); fx.starburst(e.x, e.y, 0x7df9ff, 2.6, -Math.PI / 2); this.scene.time.delayedCall(700, () => this.sfx('whooshHeavy', { pitch: 1.6 })); break;
       case 'flick': fx.text(e.x, e.y - 60, 'TOC', { color: '#8be9fd', size: 34 }); this.sfx('fingerSnap'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
       case 'headbutt': fx.text(e.x, e.y - 60, '¡CRACK!', { color: '#c084fc', size: 44 }); this.sfx('woodKnock', { pitch: 0.6 }); this.shake('heavy'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 12, 0xffffff); break;
       case 'chomp': fx.text(e.x, e.y - 60, 'ÑAM', { color: '#4cc9f0', size: 44 }); this.sfx('chomp'); this.sfx('bubbles'); this.shake('heavy'); break;
@@ -675,6 +709,9 @@ export class BattleView {
         break;
       }
       case 'brainrot': this.brainrotStep(e); break;
+      case 'tooSlow': fx.text(f.joints.nHandX, f.joints.nHandY - 30, '😏', { size: 34, hold: 300 }); this.sfx('swish', { pitch: 1.4 }); this.sfx('whoosh', { pitch: 1.5 }); break;
+      case 'pantsDown': fx.text(e.f.x, e.f.y - 230, '¡PANTALONES ABAJO!', { color: '#ff66cc', size: 46, hold: 900 }); this.sfx('scratch'); this.sfx('tauntHorn'); fx.emit('heart', e.f.x, e.f.y - 70, 8, 0xff3b6b); this.focus(e.f.x, e.f.y - 70, 1.7, 70, 0.12); break;
+      case 'laughPoint': fx.text(f.x + f.facing * 30, f.joints.headY - 30, ['JAJAJA', 'XD', '💀', 'LOL'][Math.floor(Math.random() * 4)], { color: '#ffd166', size: 26, hold: 260, angle: (Math.random() - 0.5) * 20 }); break;
       case 'jawline': fx.custom(40, (gt, gn, k) => { gt.lineStyle(4, 0x9be7ff, k); const j = f.joints, d = f.facing; gt.lineBetween(j.headX - d * 8, j.headY + 8, j.headX + d * 5, j.headY + 15); gt.lineBetween(j.headX + d * 5, j.headY + 15, j.headX + d * 13, j.headY + 9); }); fx.emit('star', f.joints.headX + f.facing * 6, f.joints.headY + 12, e.big ? 10 : 5, 0x9be7ff); this.sfx('ice'); break;
       case 'stare': {
         const j = f.joints;

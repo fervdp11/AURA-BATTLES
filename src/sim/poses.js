@@ -154,6 +154,15 @@ export const POSES = {
   spinKick: P({ lean: -20, hip: [0, -78], hn: [-36, 0], hf: [30, -10], en: BACK, fn: [70, -70], ff: [-10, 0], kn: [0.4, -1], face: 'angry' }),
   stomp: P({ lean: 16, hip: [0, -70], hn: [20, 10], hf: [-24, 14], fn: [30, -40], ff: [-14, 0], kn: KNEE_IN, face: 'angry' }),
   // ---------- nuevas técnicas ----------
+  headPulled: P({ lean: 74, head: 18, hip: [-14, -70], hn: [26, 52], hf: [10, 56], en: OUT, ef: OUT, hsn: 'open', hsf: 'open', fn: [12, 0], ff: [-22, 0], face: 'shock' }),
+  teabagHold: P({ lean: -8, head: 10, hip: [4, -74], hn: [40, 10], hf: [-14, 30], en: DOWN, hsn: 'claw', hsf: 'relaxed', rn: 90, fn: [16, 0], ff: [-16, 0], face: 'smug' }),
+  pantsGrab: P({ lean: 40, head: 10, hip: [6, -50], hn: [48, 46], hf: [40, 50], en: OUT, ef: OUT, hsn: 'claw', hsf: 'claw', fn: [28, 0], ff: [-22, 0], face: 'smug' }),
+  pantsShock: P({ lean: 10, head: -12, hip: [0, -72], hn: [14, 44], hf: [8, 46], en: OUT, ef: OUT, hsn: 'flat', hsf: 'flat', rn: 90, rf: 90, fn: [4, 0], ff: [-4, 0], kn: [1, 0.05], kf: [1, 0.05], face: 'cry' }),
+  bigKickW: P({ lean: -14, hip: [-6, -74], hn: [30, -10], hf: [-30, -4], en: OUT, ef: BACK, fn: [10, 0], ff: [-34, -16], face: 'angry' }),
+  bigKick: P({ lean: -24, hip: [4, -82], hn: [-26, -20], hf: [-40, 0], en: BACK, ef: BACK, fn: [-6, 0], ff: [78, -96], kf: [0.3, -1], face: 'angry' }),
+  tooSlow: P({ lean: -10, head: -8, hip: [-4, -76], hn: [-4, -52], hf: [-6, 50], en: UP, hsn: 'open', hsf: 'relaxed', rn: -90, fn: [14, 0], ff: [-18, 0], face: 'smug' }),
+  reachHand: P({ lean: 16, head: 4, hip: [6, -74], hn: [50, 16], hf: [-8, 52], hsn: 'shake', hsf: 'relaxed', fn: [24, 0], ff: [-14, 0], face: 'smug' }),
+  graspAir: P({ lean: 24, head: 10, hip: [10, -72], hn: [58, 18], hf: [-12, 46], hsn: 'fist', hsf: 'open', fn: [32, 0], ff: [-16, -4], face: 'shock' }),
   slapCross: P({ lean: 10, hip: [6, -72], hn: [8, -22], hf: [-18, 26], en: DOWN, hsn: 'flat', rn: -90, fn: [30, 0], ff: [-24, 0], face: 'smug' }),
   backSlap: P({ lean: 24, hip: [12, -70], hn: [58, -20], hf: [-22, 24], en: [0.2, 1], hsn: 'flat', rn: -90, fn: [36, 0], ff: [-26, 0], face: 'angry' }),
   palmSlam: P({ lean: 42, head: 10, hip: [6, -44], hn: [44, 52], hf: [36, 56], en: OUT, ef: OUT, hsn: 'palm', hsf: 'palm', rn: 90, rf: 90, fn: [30, 0], ff: [-26, 0], face: 'angry' }),
@@ -245,6 +254,7 @@ export const MODS = {
     p.hip[0] = s * 6; p.hip[1] = -70 + Math.abs(c) * 6; p.lean = s * 6; p.head = c * 8;
     p.fn = [16 + s * 6, s > 0.5 ? -10 : 0]; p.ff = [-16 + s * 6, s < -0.5 ? -10 : 0];
   },
+  thrust(p, f) { const k = Math.max(0, Math.sin(f * 0.5)); p.hip[0] += k * 12; p.lean -= k * 10; p.head -= k * 6; },
   menacing(p, f) { p.lean += S(f * 0.1) * 2; p.head += S(f * 0.13) * 3; p.hn[1] += S(f * 0.2) * 2; },
   shiver(p, f) { p.hn[0] += S(f * 3) * 2; p.hf[0] += S(f * 3.3) * 2; }
 };

@@ -47,6 +47,7 @@ function contactPointOf(t, at, facing) {
   if (at === 'gut') return [j.neckX * 0.3 + j.hipX * 0.7 - facing * 11 * s, j.neckY * 0.3 + j.hipY * 0.7];
   if (at === 'top') return [j.headX, j.headY - j.headR];
   if (at === 'shoulder') return [j.shX - facing * 8 * s, j.shY];
+  if (at === 'hip') return [j.hipX - facing * 12 * s, j.hipY + 4 * s];
   return null;
 }
 // apretón de manos: ambos sacuden la mano cercana en el mismo punto hasta 'release'
@@ -154,23 +155,37 @@ def('sixSeven', {
 def('fakeHandshake', {
   name: 'Fake Handshake', cost: 15, cd: 60, startup: 12, active: 6, recovery: 30, color: '#9be7ff',
   anim: [[0, 'guard'], [10, 'offer', 'out'], [18, 'offer'], [48, 'guard']],
-  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 70, 120) },
+  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 80, 120) },
   on: {
     grab(f, b, m, d) {
+      // le ofreces la mano; el rival alarga la suya para dártela... y justo antes del contacto la quitas: ¡tortazo!
+      const meet = (a, t) => { const j = a.joints; return { x: j.shX + a.facing * 44 * a.scale, y: j.shY + 20 * a.scale }; };
       b.startLock(f, d, {
-        frames: 60, off: [80, 0], tpose: t => t < 40 ? 'offer' : 'held',
-        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [52, 'slap'], [60, 'guard', 'inOut']],
-        // los dos se dan la mano de verdad; al soltarla, la misma mano vuelve con un tortazo a la mejilla
-        ...handshake(36, 30, (a, t, fr) => { const h = faceHit(a, t, 'n', 43, 52, fr); return h ? { n: h } : null; }),
-        hits: [{ f: 44, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12 }],
+        frames: 68, off: [92, 0], tpose: t => (t < 24 ? 'reachHand' : t < 44 ? 'graspAir' : 'held'),
+        anim: [[0, 'offer'], [22, 'offer'], [26, 'tooSlow', 'snap'], [38, 'tooSlow'], [44, 'slapW', 'out'], [50, 'slap', 'snap'], [58, 'slap'], [68, 'guard', 'inOut']],
+        // la mano del atacante se queda quieta ofreciendo hasta el último momento
+        hands: (a, t, fr) => {
+          if (fr <= 23) { const p = meet(a); return { n: { x: p.x, y: p.y, w: 1 } }; }
+          const h = faceHit(a, t, 'n', 49, 58, fr); return h ? { n: h } : null;
+        },
+        // la del rival se acerca hasta casi tocarla y, cuando la quitas, aprieta el aire
+        thands: (a, t, fr) => {
+          if (fr > 44) return null;
+          const p = meet(a), k = Math.min(1, fr / 24);
+          const jt = t.joints, sx = jt.shX - a.facing * 20 * t.scale, sy = jt.shY + 24 * t.scale;
+          const gap = fr <= 23 ? 30 * a.scale * (1 - k) + 22 * a.scale : -6 * a.scale; // se queda a un palmo... y luego aprieta el vacío
+          return { n: { x: sx + (p.x - a.facing * gap - sx) * k, y: sy + (p.y - sy) * k, w: 1 } };
+        },
+        frame: (ff, bb, mm, t, tt) => { if (t === 24) { bb.emit('callout', { f: ff, text: '¡DEMASIADO LENTO!', color: '#9be7ff' }); bb.emit('fx', { name: 'tooSlow', f: ff, d: tt }); } },
+        hits: [{ f: 50, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12, react: 'slapped' }],
         end: { kb: [10, -7], knockdown: true }
       });
       say(b, f, 'FAKE HANDSHAKE', '#9be7ff');
     },
     end(f, b, m) { if (!m.hit) { b.dealDamage(null, f, 15); say(b, f, 'LEFT HANGING', '#888888'); } }
   },
-  desc: 'Ofreces la mano... y le das un tortazo cómico. Agarre: atraviesa el bloqueo.', tip: 'Salta, haz dash o golpéalo mientras ofrece la mano. Si falla, queda colgado y pierde aura.',
-  ai: { role: 'grab', range: [0, 95] }
+  desc: 'Ofreces la mano; cuando el rival va a dártela, la quitas en el último instante ("¡demasiado lento!") y le cruzas la cara. Agarre: atraviesa el bloqueo.', tip: 'Salta, haz dash o golpéalo mientras ofrece la mano. Si falla, queda colgado y pierde aura.',
+  ai: { role: 'grab', range: [0, 105] }
 });
 
 def('mewing', {
@@ -1742,6 +1757,71 @@ def('mainCharacterEnding', {
   desc: 'Marcas al rival con un foco, te pones las gafas y te alejas sin mirar mientras explota a tu espalda (≈260).', tip: 'Cuando aparezca el foco, sal con dash.',
   ai: { role: 'ult', range: [0, 2000] }
 });
+
+
+// ---------- agarre de humillación ----------
+def('teabag', {
+  name: 'Teabag Supremo', cost: 20, cd: 150, startup: 10, active: 6, recovery: 26, color: '#ff66cc',
+  anim: [[0, 'guard'], [8, 'dapW', 'out'], [12, 'teabagHold'], [40, 'guard']],
+  hit: { dmg: 0, grab: true, box: frontBox(20, -160, 70, 130) },
+  on: {
+    grab(f, b, m, d) {
+      // le agarra la cabeza, se la baja hasta la cintura y le da tres caderazos en la cara
+      b.startLock(f, d, {
+        frames: 64, off: [t => (t < 8 ? 70 : 82), 0], tpose: t => (t < 6 ? 'held' : 'headPulled'),
+        anim: [[0, 'teabagHold'], [64, 'teabagHold']], mods: [[10, 52, 'thrust']],
+        hands: (a, t, fr) => { const j = t.joints; return fr < 56 ? { n: { x: j.headX, y: j.headY - j.headR * 0.8, w: Math.min(1, fr / 4) } } : null; },
+        frame: (ff, bb, mm, t, tt) => { if (t === 12) bb.emit('callout', { f: ff, text: 'TEABAG', color: '#ff66cc' }); },
+        hits: [{ f: 13, dmg: 20, drain: 15, fx: 'boing', spark: 'light', react: 'headPulled' }, { f: 25, dmg: 20, drain: 15, fx: 'boing', spark: 'light', react: 'headPulled' }, { f: 38, dmg: 25, drain: 20, fx: 'boing', spark: 'medium', react: 'headPulled', say: 'HUMILLADO', sayColor: '#ff66cc' },
+          { f: 58, dmg: 40, spark: 'heavy', fx: 'slap', last: true, react: 'hurtGut' }],
+        end: { kb: [9, -5], knockdown: true }
+      });
+    }
+  },
+  desc: 'Le agarras la cabeza, se la bajas hasta tu cintura y le das tres caderazos en toda la cara. Agarre de humillación: atraviesa el bloqueo.', tip: 'Salta o castígalo mientras alarga el brazo.',
+  ai: { role: 'grab', range: [0, 95] }
+});
+
+// ---------- REMATES DE K.O. (se activan con el golpe que gana el combate; se equipan en Personaje) ----------
+const FIN = { slot: 'finisher', cost: 0, cd: 0, startup: 1, active: 2, recovery: 10, cine: false, ai: { role: 'finisher', range: [0, 0] } };
+export const FINISHERS = {
+  kickSpace: { name: 'Patada Espacial', price: 0, desc: 'Una patada tan fuerte que lo mandas al espacio exterior. Brilla como una estrella.' },
+  pantsDown: { name: 'Bajada de Pantalones', price: 0, desc: 'Le bajas los pantalones delante de todos, lo señalas y te ríes. Calzoncillos de corazones incluidos.' },
+  bonkGround: { name: 'Bonk Sello', price: 400, desc: 'Tres batazos que lo dejan aplastado como un sello.' },
+  explosionWalk: { name: 'Explosión de Espaldas', price: 700, desc: 'Te das la vuelta, te alejas y explota a tu espalda. Ni lo miras.' }
+};
+export const FINISHER_SPECS = {
+  kickSpace: (a, d) => ({
+    frames: 40, off: [70, 0], tpose: t => (t < 22 ? 'scared' : 'airHurt'), cine: true,
+    anim: [[0, 'guard'], [10, 'bigKickW', 'anticip'], [22, 'bigKick', 'snap'], [34, 'bigKick'], [40, 'guard', 'inOut']],
+    hits: [{ f: 22, dmg: 0, spark: 'mega', fx: 'spaceKick', hitstop: 20, say: '¡AL ESPACIO!', sayColor: '#7df9ff', last: true }],
+    end: { kb: [5, -34], knockdown: true, space: true }
+  }),
+  pantsDown: (a, d) => ({
+    frames: 112, off: [t => (t < 18 ? 62 : 78), 0], tpose: t => (t < 16 ? 'held' : 'pantsShock'), cine: true,
+    anim: [[0, 'guard'], [10, 'pantsGrab', 'out'], [18, 'pantsGrab'], [24, 'crouch', 'snap'], [34, 'pointLaugh', 'out'], [104, 'pointLaugh']], mods: [[34, 104, 'laugh']],
+    hands: (aa, t, fr) => { if (fr < 8 || fr > 22) return null; const j = t.joints, w = Math.min(1, (fr - 7) / 3), drop = fr > 16 ? (fr - 16) * 9 * t.scale : 0; return { n: { x: j.hipX - aa.facing * 10 * t.scale, y: j.hipY + drop, w }, f: { x: j.hipX - aa.facing * 4 * t.scale, y: j.hipY + 4 + drop, w } }; },
+    frame: (ff, bb, mm, t, tt) => { if (t === 17) { tt.pantsDown = true; bb.emit('fx', { name: 'pantsDown', f: tt, a: ff }); } if (t > 20 && t % 18 === 0) bb.emit('fx', { name: 'laughPoint', f: ff }); },
+    hits: [{ f: 18, dmg: 0, drain: 0, fx: 'boing', say: '¡PANTALONES ABAJO!', sayColor: '#ff66cc', react: 'pantsShock', reactFrames: 90 }, { f: 100, dmg: 0, spark: 'light', last: true, react: 'pantsShock' }],
+    end: { kb: [1, -3], knockdown: true }
+  }),
+  bonkGround: (a, d) => ({
+    frames: 92, off: [64, 0], tpose: 'held', cine: true,
+    anim: [[0, 'bonkW'], [16, 'bonkW'], [22, 'bonk', 'snap'], [34, 'bonkW'], [42, 'bonk', 'snap'], [54, 'bonkW'], [62, 'bonk', 'snap'], [92, 'bonk']],
+    hands: (aa, t, fr) => { for (const h of [22, 42, 62]) if (fr >= h - 1 && fr < h + 8) { const j = t.joints; return { n: { x: j.headX, y: j.headY - j.headR, w: 1 } }; } return null; },
+    frame: (ff, bb, mm, t, tt) => { const n = (t >= 22) + (t >= 42) + (t >= 62); tt.squashY = 1 - n * 0.2; tt.squashX = 1 + n * 0.18; },
+    hits: [{ f: 22, dmg: 0, fx: 'tung', spark: 'heavy', react: 'flattened', reactFrames: 30 }, { f: 42, dmg: 0, fx: 'tung', spark: 'heavy', react: 'flattened', reactFrames: 30 }, { f: 62, dmg: 0, fx: 'tung', spark: 'mega', react: 'flattened', reactFrames: 40, say: 'APLASTADO', sayColor: '#c68642', last: true, hitstop: 14 }],
+    end: { kb: [0, -2], knockdown: true }
+  }),
+  explosionWalk: (a, d) => ({
+    frames: 100, off: [t => 80 + Math.max(0, t - 14) * 2.2, 0], tpose: t => (t < 70 ? 'scared' : 'airHurt'), cine: true,
+    anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [100, 'walkAway']],
+    frame: (ff, bb, mm, t, tt) => { if (t === 14) ff.addStatus('cool', 240, {}, ff); if (t === 70) bb.emit('fx', { name: 'explosion', x: tt.x, y: tt.y - 80, big: true }); },
+    hits: [{ f: 70, dmg: 0, spark: 'mega', fx: 'boom', say: 'NI LO MIRA', sayColor: '#ffe066', last: true, hitstop: 16 }],
+    end: { kb: [8, -13], knockdown: true }
+  })
+};
+for (const id in FINISHERS) def('fin_' + id, { ...FIN, name: FINISHERS[id].name, color: '#ffd166', anim: [[0, 'guard']], desc: FINISHERS[id].desc, tip: '' });
 
 // Contactos automáticos: los movimientos de bofetada/palmada llevan la mano a la cara (o al pecho) al conectar.
 for (const m of Object.values(MOVES)) {

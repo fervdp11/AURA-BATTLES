@@ -3,7 +3,7 @@ import { Save } from '../core/Save.js';
 import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, StickPreview, go, fadeIn, keyHints, toast } from '../ui/UI.js';
-import { MOVES, SPECIAL_IDS, ULT_IDS } from '../sim/moves.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS , FINISHERS } from '../sim/moves.js';
 import { BODY_COLORS, AURA_COLORS, ACCESSORIES, CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
 import { CELEBRATIONS } from '../sim/celebrations.js';
 import { playerProfile } from '../core/Match.js';
@@ -46,6 +46,7 @@ export class CharacterScene extends Phaser.Scene {
       { label: 'APARIENCIA', onSelect: () => this.appearance() },
       { label: 'TÉCNICAS EQUIPADAS', onSelect: () => this.loadout() },
       { label: 'TIENDA DE TÉCNICAS', onSelect: () => this.shop() },
+      { label: 'REMATE DE K.O.', value: () => (Save.d.finisher === 'none' ? 'DESACTIVADO' : (FINISHERS[Save.d.finisher] || {}).name || ''), onSelect: () => this.finishers() },
       { label: 'CELEBRACIÓN DE VICTORIA', value: () => (CELEBRATIONS[d.profile.celebration] || {}).name || '', onSelect: () => this.celebration() },
       { label: 'TÍTULO', value: () => (TITLES.find(t => t.id === d.profile.title) || {}).name || '', onSelect: () => this.titles() },
       { label: 'NOMBRE', value: () => d.profile.name, onSelect: () => this.editName() },
@@ -138,6 +139,29 @@ export class CharacterScene extends Phaser.Scene {
     });
     items.push({ label: 'VOLVER', onSelect: () => this.root() });
     this.setMenu(items, { onBack: () => this.root(), onChange: it => this.moveInfo(it.m) });
+  }
+
+  // remates de K.O.: animación que se juega con el golpe que gana el combate. Se compran con AP y se equipan.
+  finishers() {
+    const d = Save.d;
+    if (!d.unlockedFinishers) d.unlockedFinishers = ['kickSpace', 'pantsDown'];
+    const items = Object.keys(FINISHERS).map(id => {
+      const F = FINISHERS[id];
+      return {
+        label: F.name, id,
+        value: () => (d.finisher === id ? 'EQUIPADO' : d.unlockedFinishers.includes(id) ? '' : F.price + ' AP'),
+        onSelect: () => {
+          if (!d.unlockedFinishers.includes(id)) {
+            if (d.ap < F.price) { toast(this, 'Te faltan ' + (F.price - d.ap) + ' AP', '#ff4d6d'); return; }
+            d.ap -= F.price; d.unlockedFinishers.push(id); toast(this, '¡Remate desbloqueado: ' + F.name + '!', '#ffd166'); Audio.play('victory');
+          }
+          d.finisher = id; Save.save(); this.root();
+        }
+      };
+    });
+    items.push({ label: 'DESACTIVADO', id: 'none', value: () => (d.finisher === 'none' ? 'EQUIPADO' : ''), onSelect: () => { d.finisher = 'none'; Save.save(); this.root(); } });
+    items.push({ label: 'VOLVER', onSelect: () => this.root() });
+    this.setMenu(items, { onBack: () => this.root(), onChange: it => this.descT.setText(it.id && FINISHERS[it.id] ? FINISHERS[it.id].desc + '\n\nSe activa con el golpe que gana el combate.' : it.id === 'none' ? 'Sin animación de remate.' : '') });
   }
 
   celebration() {

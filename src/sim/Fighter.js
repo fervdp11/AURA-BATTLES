@@ -26,6 +26,7 @@ export class Fighter {
     this.aura = this.maxAura;
     this.energy = cfg.energy ?? 0;
     this.isHuman = !!cfg.human;
+    this.finisher = cfg.finisher || null; // remate de K.O. equipado
     this.ctrlProfile = cfg.ctrlProfile || 'solo'; // perfil de teclas (1 jugador, J1 o J2)
     this.controller = cfg.controller || null;
     this.x = cfg.x ?? 600; this.y = GROUND_Y; this.vx = 0; this.vy = 0;
@@ -584,6 +585,8 @@ export class Fighter {
   // ---------- física ----------
   physics() {
     if (this.state === 'locked') return;
+    // patada espacial: sale disparado hacia arriba hasta perderse entre las estrellas
+    if (this.toSpace) { this.vy = Math.min(this.vy, -26); this.y += this.vy; this.x += this.vx * 0.3; if (this.y < GROUND_Y - 2600) { this.visible = false; this.vy = 0; } return; }
     const b = this.b;
     if (!this.grounded) {
       const g = this.move && this.move.def.gravity !== undefined ? this.move.def.gravity : 1;
