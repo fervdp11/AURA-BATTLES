@@ -4,8 +4,9 @@ import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, StickPreview, go, fadeIn, keyHints, toast } from '../ui/UI.js';
 import { MOVES, SPECIAL_IDS, ULT_IDS , FINISHERS } from '../sim/moves.js';
-import { BODY_COLORS, AURA_COLORS, ACCESSORIES, CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
+import { CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
 import { CELEBRATIONS } from '../sim/celebrations.js';
+import { RARITY } from '../data/cosmetics.js';
 import { playerProfile } from '../core/Match.js';
 
 const SLOTS = [['special', 'ESPECIAL (C)'], ['specialF', '→ + ESPECIAL'], ['specialD', '↓ + ESPECIAL'], ['skill1', 'HABILIDAD 1 (A)'], ['skill2', 'HABILIDAD 2 (S)'], ['ult', 'ULTIMATE (D)']];
@@ -43,40 +44,16 @@ export class CharacterScene extends Phaser.Scene {
     this.refreshPreview('guard');
     this.descT.setText('');
     this.setMenu([
-      { label: 'APARIENCIA', onSelect: () => this.appearance() },
+      { label: 'EDITOR DE PERSONAJE', value: () => 'ropa · colores · auras', onSelect: () => go(this, 'Editor', { back: 'Character' }) },
       { label: 'TÉCNICAS EQUIPADAS', onSelect: () => this.loadout() },
       { label: 'TIENDA DE TÉCNICAS', onSelect: () => this.shop() },
+      { label: 'TIENDA DE COSMÉTICOS', onSelect: () => go(this, 'Editor', { back: 'Character', cat: 'pants' }) },
       { label: 'REMATE DE K.O.', value: () => (Save.d.finisher === 'none' ? 'DESACTIVADO' : (FINISHERS[Save.d.finisher] || {}).name || ''), onSelect: () => this.finishers() },
       { label: 'CELEBRACIÓN DE VICTORIA', value: () => (CELEBRATIONS[d.profile.celebration] || {}).name || '', onSelect: () => this.celebration() },
       { label: 'TÍTULO', value: () => (TITLES.find(t => t.id === d.profile.title) || {}).name || '', onSelect: () => this.titles() },
       { label: 'NOMBRE', value: () => d.profile.name, onSelect: () => this.editName() },
       { label: 'VOLVER', onSelect: () => go(this, 'Menu') }
     ], { onBack: () => go(this, 'Menu') });
-  }
-
-  appearance() {
-    const p = Save.d.profile;
-    const save = () => { Save.save(); this.refreshPreview(); };
-    const cycle = (arr, cur, dir, ok = () => true) => {
-      let i = arr.indexOf(cur);
-      for (let n = 0; n < arr.length; n++) { i = (i + dir + arr.length) % arr.length; if (ok(arr[i])) return arr[i]; }
-      return cur;
-    };
-    const auraOk = c => reqMet((AURA_COLORS.find(a => a.c === c) || {}).req, Save.d);
-    const accOk = id => reqMet((ACCESSORIES.find(a => a.id === id) || {}).req, Save.d);
-    const auraIds = AURA_COLORS.map(a => a.c), accIds = ACCESSORIES.map(a => a.id);
-    this.setMenu([
-      { label: 'COLOR DEL CUERPO', value: () => p.color.toUpperCase(), onLeft: () => { p.color = cycle(BODY_COLORS, p.color, -1); save(); }, onRight: () => { p.color = cycle(BODY_COLORS, p.color, 1); save(); } },
-      { label: 'COLOR DE ACENTO', value: () => p.accent.toUpperCase(), onLeft: () => { p.accent = cycle(BODY_COLORS, p.accent, -1); save(); }, onRight: () => { p.accent = cycle(BODY_COLORS, p.accent, 1); save(); } },
-      { label: 'COLOR DEL AURA', value: () => (AURA_COLORS.find(a => a.c === p.aura) || {}).name || p.aura, onLeft: () => { p.aura = cycle(auraIds, p.aura, -1, auraOk); save(); }, onRight: () => { p.aura = cycle(auraIds, p.aura, 1, auraOk); save(); } },
-      { label: 'ACCESORIO', value: () => (ACCESSORIES.find(a => a.id === p.accessory) || {}).name || '', onLeft: () => { p.accessory = cycle(accIds, p.accessory, -1, accOk); save(); }, onRight: () => { p.accessory = cycle(accIds, p.accessory, 1, accOk); save(); } },
-      { label: 'VOLVER', onSelect: () => this.root() }
-    ], { onBack: () => this.root(), onChange: () => this.lockedInfo() });
-  }
-  lockedInfo() {
-    const lockedAura = AURA_COLORS.filter(a => !reqMet(a.req, Save.d)).map(a => `${a.name} (${reqText(a.req)})`);
-    const lockedAcc = ACCESSORIES.filter(a => !reqMet(a.req, Save.d)).map(a => `${a.name} (${reqText(a.req)})`);
-    this.descT.setText((lockedAura.length ? 'Auras bloqueadas: ' + lockedAura.slice(0, 4).join(', ') + '\n' : '') + (lockedAcc.length ? 'Accesorios bloqueados: ' + lockedAcc.slice(0, 4).join(', ') : '¡Todo desbloqueado!'));
   }
 
   loadout() {
@@ -121,7 +98,7 @@ export class CharacterScene extends Phaser.Scene {
       const owned = d.unlockedMoves.includes(id);
       const rankOk = ri >= s.rank || d.prestige > 0;
       return {
-        label: (MOVES[id].slot === 'ult' ? '★ ' : '') + MOVES[id].name, m: MOVES[id],
+        label: (MOVES[id].slot === 'ult' ? '★ ' : '') + MOVES[id].name, m: MOVES[id], labelColor: RARITY[s.rarity || 'common'].color, color: RARITY[s.rarity || 'common'].color,
         value: () => (d.unlockedMoves.includes(id) ? 'COMPRADA' : rankOk ? s.price + ' AP' : '🔒 ' + RANKS[s.rank].name),
         onSelect: () => {
           if (d.unlockedMoves.includes(id)) { Audio.play('ui_deny'); return; }

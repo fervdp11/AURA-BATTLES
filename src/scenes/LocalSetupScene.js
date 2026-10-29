@@ -61,7 +61,12 @@ export class LocalSetupScene extends Phaser.Scene {
   }
   profileOf(p) {
     const c = this.R[p.ci];
-    return { ...c.profile, name: c.name.replace(' ★', ''), color: p.color, accent: p.accent, aura: p.aura, title: 'J' + (p.i + 1) };
+    // la ropa y los accesorios del personaje se conservan; si se cambia el color, el patrón de cuerpo vuelve a liso
+    const eq = { ...(c.profile.equip || {}) };
+    if (p.color !== c.profile.color) eq.body = null;
+    if (p.aura !== c.profile.aura) eq.auraColor = null;
+    if (p.accent !== c.profile.accent) eq.accent = null;
+    return { ...c.profile, equip: eq, name: c.name.replace(' ★', ''), color: p.color, accent: p.accent, aura: p.aura, title: 'J' + (p.i + 1) };
   }
 
   rows(p) {

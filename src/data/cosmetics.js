@@ -14,7 +14,7 @@ export { AVG_MATCH_AP };
 export const priceFor = rarity => priceMatches(RARITY[rarity].mult);
 
 export const SLOTS = {
-  skin: 'TIPO DE CUERPO', body: 'COLORES DEL CUERPO', pants: 'PANTALONES', shoes: 'CALZADO',
+  skin: 'TIPO DE CUERPO', body: 'COLORES DEL CUERPO', accent: 'COLOR DE ACENTO', pants: 'PANTALONES', shoes: 'CALZADO',
   head: 'CABEZA', face: 'GAFAS', neck: 'CUELLO', aura: 'AURA', auraColor: 'COLOR DEL AURA'
 };
 
@@ -39,6 +39,9 @@ add('body', 'lava', 'Lava', 'epic', { pattern: 'lava', c1: '#ff3d00', c2: '#2a0a
 add('body', 'goldBlack', 'Oro y Ónice', 'epic', { pattern: 'split', c1: '#ffd700', c2: '#151515' });
 add('body', 'rainbow', 'Arcoíris Animado', 'legendary', { pattern: 'rainbow', c1: '#ff4d6d', c2: '#7df9ff' });
 add('body', 'galaxy', 'Galaxia', 'legendary', { pattern: 'galaxy', c1: '#1b0f3b', c2: '#7b2cbf' });
+
+// ---- color de acento (detalles, cinturilla y zapatillas por defecto): siempre gratis ----
+BODY_COLORS.forEach((c, i) => add('accent', 'a' + i, 'Acento ' + c.toUpperCase(), 'common', { c }, true));
 
 // ---- pantalones (con física secundaria de tela en el renderer) ----
 add('pants', 'sport', 'Pantalón corto deportivo', 'common', { style: 'sport', c1: '#2b2d42', c2: '#ffffff' }, true);
@@ -99,7 +102,8 @@ const AURA_RARITY = { 0: 'common', 1: 'common', 2: 'common' };
 AURA_COLORS.forEach((a, i) => add('auraColor', 'c' + i, a.name, a.req ? (a.req.prestige ? 'legendary' : a.req.rank >= 5 ? 'epic' : 'rare') : AURA_RARITY[i] || 'common', { c: a.c, req: a.req }, !a.req));
 
 export const COSMETICS = C;
-export const byId = id => C.find(c => c.id === id);
+const BY_ID = new Map(C.map(c => [c.id, c]));
+export const byId = id => BY_ID.get(id);
 export const ofCat = cat => C.filter(c => c.cat === cat);
 
 // ---------- propiedad ----------
@@ -130,6 +134,7 @@ export function equippedId(profile, cat) {
   if (cat === 'neck') return profile.accessory === 'chain' ? 'neck:chain' : profile.accessory === 'scarf' ? 'neck:scarf' : 'neck:none';
   if (cat === 'auraColor') { const i = AURA_COLORS.findIndex(a => a.c === profile.aura); return 'auraColor:c' + Math.max(0, i); }
   if (cat === 'body') { const i = BODY_COLORS.indexOf(profile.color); return i >= 0 ? 'body:solid' + i : null; }
+  if (cat === 'accent') { const i = BODY_COLORS.indexOf(profile.accent); return i >= 0 ? 'accent:a' + i : null; }
   return DEFAULT_COSMETICS[cat];
 }
 export function equip(profile, item) {
@@ -137,6 +142,7 @@ export function equip(profile, item) {
   profile.equip[item.cat] = item.id;
   const d = item.data;
   if (item.cat === 'body') { profile.color = d.c1; profile.color2 = d.c2; }
+  if (item.cat === 'accent') profile.accent = d.c;
   if (item.cat === 'head') profile.accessory = d.acc;
   if (item.cat === 'auraColor') profile.aura = d.c;
   if (item.cat === 'pants') { profile.pantsColor = d.c1; profile.pantsColor2 = d.c2; }
@@ -148,14 +154,16 @@ const hex = c => (typeof c === 'number' ? c : parseInt(String(c || '#ffffff').re
 export function makeLook(p = {}) {
   const get = cat => byId(equippedId(p, cat));
   const body = get('body'), pants = get('pants'), shoes = get('shoes'), face = get('face'), neck = get('neck'), aura = get('aura'), skin = get('skin');
-  const rainbowAura = p.aura === 'rainbow';
+  const ac = p.equip && p.equip.auraColor ? byId(p.equip.auraColor) : null;
+  const auraC = ac ? ac.data.c : p.aura;
+  const rainbowAura = auraC === 'rainbow';
   return {
     body: hex(p.color || '#f4f4f8'), body2: hex(p.color2 || (body ? body.data.c2 : null) || p.color || '#f4f4f8'),
     bodyPattern: body ? body.data.pattern : 'solid', bodyGlowLines: !!(body && body.data.glowLines),
     accent: hex(p.accent || '#ffd166'), outline: p.boss ? 0x14000a : 0x0a0a14,
-    aura: rainbowAura ? 0xffffff : hex(p.aura || '#7df9ff'), auraRainbow: rainbowAura,
+    aura: rainbowAura ? 0xffffff : hex(auraC || '#7df9ff'), auraRainbow: rainbowAura,
     auraStyle: aura ? aura.data.style : 'classic',
-    accessory: p.accessory && p.accessory !== 'shades' && p.accessory !== 'chain' && p.accessory !== 'scarf' ? p.accessory : 'none',
+    accessory: (p.equip && p.equip.head && byId(p.equip.head)) ? byId(p.equip.head).data.acc : p.accessory && p.accessory !== 'shades' && p.accessory !== 'chain' && p.accessory !== 'scarf' ? p.accessory : 'none',
     eyewear: face ? face.data.eye : (p.accessory === 'shades' ? 'shades' : 'none'),
     neck: neck ? neck.data.neck : 'none',
     pants: pants ? pants.data.style : 'sport', pantsColor: hex(p.pantsColor || (pants ? pants.data.c1 : '#2b2d42')), pantsColor2: hex(p.pantsColor2 || (pants ? pants.data.c2 : '#ffffff')),

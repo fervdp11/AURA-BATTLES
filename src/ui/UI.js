@@ -251,7 +251,7 @@ export class MenuList {
       if (sel && this.flashT > 0) { g.fillStyle(0xffffff, this.flashT / 16); g.fillRect(x, y, this.w, this.h); }
       lt.setText((it.locked ? '🔒 ' : '') + it.label);
       lt.setPosition(x + 26 + a * 6, y + this.h / 2 - lt.height / 2);
-      lt.setColor(it.disabled || it.locked ? '#6b6585' : sel ? '#ffffff' : '#c9c3e6');
+      lt.setColor(it.disabled || it.locked ? '#6b6585' : it.labelColor || (sel ? '#ffffff' : '#c9c3e6'));
       lt.setScale(1 + a * 0.04);
       const v = it.value ? it.value() : '';
       vt.setText(it.onLeft && sel ? `◀ ${v} ▶` : v);

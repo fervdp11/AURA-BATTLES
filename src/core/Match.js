@@ -12,8 +12,17 @@ export function playerProfile() {
   return { ...d.profile, title: t ? t.name : '', scale: 1 };
 }
 
+// Ropa de los bots: elegida de forma estable a partir del nombre (solo estética, nunca da ventaja)
+const BOT_PANTS = ['sport', 'boxing', 'long', 'joggers', 'camo', 'future', 'flames', 'galaxy', 'sixseven'];
+const BOT_SHOES = ['sneaker', 'hightops', 'slides', 'boots', 'cleats', 'jets', 'golden'];
+const BOT_AURA = ['classic', 'classic', 'flame', 'sparkle', 'electric', 'classic'];
+function nameHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
 export function botProfile(bot) {
-  return { name: bot.name, color: bot.color, accent: bot.accent, aura: bot.aura, accessory: bot.accessory, celebration: bot.celebration, scale: bot.scale, boss: bot.boss, title: bot.boss ? 'JEFE' : '', quote: bot.quote, style: bot.style, level: bot.level };
+  const h = nameHash(bot.name || 'bot');
+  const lv = bot.level || 0;
+  const pants = BOT_PANTS[Math.min(BOT_PANTS.length - 1, (h % 5) + (lv >= 4 ? 3 : lv >= 2 ? 1 : 0))];
+  const equip = { pants: 'pants:' + pants, shoes: 'shoes:' + BOT_SHOES[(h >>> 5) % BOT_SHOES.length], aura: 'aura:' + (bot.boss ? 'flame' : BOT_AURA[(h >>> 9) % BOT_AURA.length]) };
+  return { name: bot.name, color: bot.color, accent: bot.accent, aura: bot.aura, accessory: bot.accessory, celebration: bot.celebration, scale: bot.scale, boss: bot.boss, title: bot.boss ? 'JEFE' : '', quote: bot.quote, style: bot.style, level: bot.level, equip };
 }
 
 export function buildBattle(spec) {

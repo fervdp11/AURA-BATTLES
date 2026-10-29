@@ -19,6 +19,7 @@ import { PauseScene } from './scenes/PauseScene.js';
 import { ResultScene } from './scenes/ResultScene.js';
 import { MoveListScene } from './scenes/MoveListScene.js';
 import { ControlsScene } from './scenes/ControlsScene.js';
+import { EditorScene } from './scenes/EditorScene.js';
 import { LocalSetupScene } from './scenes/LocalSetupScene.js';
 import { Audio } from './core/Audio.js';
 import { Save } from './core/Save.js';
@@ -34,7 +35,7 @@ const config = {
   render: { antialias: true, powerPreference: 'high-performance' },
   fps: { target: 60, smoothStep: true },
   input: { keyboard: false, gamepad: false },
-  scene: [BootScene, DemoScene, MenuScene, PlayScene, PathScene, CustomScene, CharacterScene, PrestigeScene, SettingsScene, VersusScene, FightScene, HUDScene, PauseScene, ResultScene, MoveListScene, ControlsScene, LocalSetupScene]
+  scene: [BootScene, DemoScene, MenuScene, PlayScene, PathScene, CustomScene, CharacterScene, PrestigeScene, SettingsScene, VersusScene, FightScene, HUDScene, PauseScene, ResultScene, MoveListScene, ControlsScene, LocalSetupScene, EditorScene]
 };
 
 // Espera a que las fuentes locales estén listas antes de crear textos
