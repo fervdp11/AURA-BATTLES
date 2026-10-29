@@ -6,6 +6,8 @@ import { makePose, copyPose, computeJoints } from '../sim/skeleton.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { CELEBRATIONS, DEFEATS } from '../sim/celebrations.js';
 import { playCelebration } from '../sim/Fighter.js';
+import { AuraLayer } from '../view/AuraFX.js';
+import { makeLook } from '../data/cosmetics.js';
 
 export const FONT = '"Anton", Impact, "Arial Black", sans-serif';
 export const BODY_FONT = '"Rubik", "Segoe UI", Roboto, Arial, sans-serif';
@@ -20,6 +22,49 @@ export function txt(scene, x, y, str, size = 24, color = '#ffffff', o = {}) {
   });
   t.setOrigin(o.ox ?? 0, o.oy ?? 0);
   if (o.depth !== undefined) t.setDepth(o.depth);
+  if (o.grad) gradText(t, o.grad);
+  else if (!o.body && size >= 40 && o.grad !== false) autoGrad(t, color);
+  return t;
+}
+
+// titulares: degradado derivado de su color (claro arriba → color → algo más oscuro abajo); se reaplica con setColor
+function mixHex(h, to, k) { const a = hexToRgb(h), b = hexToRgb(to); return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, '0')).join(''); }
+export function autoGrad(t, color) {
+  if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) return t;
+  gradText(t, [mixHex(color, '#ffffff', 0.55), color, mixHex(color, '#000000', 0.28)]);
+  if (!t._colorHooked) {
+    t._colorHooked = true;
+    const orig = t.setColor.bind(t);
+    t.setColor = c => { orig(c); if (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) gradText(t, [mixHex(c, '#ffffff', 0.55), c, mixHex(c, '#000000', 0.28)]); return t; };
+  }
+  return t;
+}
+
+// Relleno con degradado vertical suave para textos destacados: los colores se interpolan de forma
+// progresiva (varias paradas intermedias) del centro hacia los extremos, sin cortes ni bandas verticales.
+const hexToRgb = h => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+export function gradText(t, cols) {
+  const ctx = t.context;
+  const apply = () => {
+    const h = Math.max(4, t.height || parseInt(t.style.fontSize, 10) * 1.3);
+    const pad = (t.style.strokeThickness || 0) / 2 + (t.padding ? t.padding.top || 0 : 0);
+    const g = ctx.createLinearGradient(0, pad, 0, h - pad);
+    const rgb = cols.map(hexToRgb), n = 12;
+    for (let i = 0; i <= n; i++) {
+      // curva suave (easing) entre paradas: más brillo en el centro y transición progresiva hacia arriba/abajo
+      const u = i / n, f = u * (rgb.length - 1), k = Math.min(rgb.length - 2, Math.floor(f)), e = f - k, s = e * e * (3 - 2 * e);
+      const c = rgb[k].map((v, j) => Math.round(v + (rgb[k + 1][j] - v) * s));
+      g.addColorStop(u, `rgb(${c[0]},${c[1]},${c[2]})`);
+    }
+    t.setFill(g);
+  };
+  apply();
+  t._gradCols = cols;
+  if (!t._gradHooked) {
+    t._gradHooked = true;
+    const orig = t.setText.bind(t);
+    t.setText = v => { const h0 = t.height; orig(v); if (t._gradCols && Math.abs(t.height - h0) > 1) apply(); return t; };
+  }
   return t;
 }
 
@@ -218,34 +263,45 @@ export class StickPreview {
     this.scale = o.scale || 1.6; this.facing = o.facing || 1;
     this.g = scene.add.graphics().setDepth(o.depth ?? 5);
     this.glow = scene.add.graphics().setDepth((o.depth ?? 5) - 1).setBlendMode('ADD');
+    this.auraL = o.aura === false ? null : new AuraLayer(scene, (o.depth ?? 5) - 2, (o.depth ?? 5) - 3);
     this.anim = o.anim || 'idle';
-    this.f = 0;
+    this.f = o.startFrame || 0;
     this.pose = makePose(POSES.idle);
     this.j = {};
+    this.cloth = { sway: 0, v: 0, px: x };
     this.glowAmt = o.glow ?? 0.8;
+    this.key = 'prev' + (++PREV_ID);
   }
   setProfile(p) { this.profile = p; }
-  setAnim(a) { this.anim = a; this.f = 0; }
+  setAnim(a, startFrame = 0) { if (this.anim === a) return; this.anim = a; this.f = startFrame; }
   look() {
-    const p = this.profile;
-    return { body: hex(p.color || '#f4f4f8'), accent: hex(p.accent || '#ffd166'), aura: p.aura === 'rainbow' ? 0xffffff : hex(p.aura || '#7df9ff'), accessory: p.accessory || 'none', outline: 0x0a0a14,
-      auraFn: p.aura === 'rainbow' ? (t => { const h = (t * 3) % 360; return hslInt(h); }) : null };
+    // se recalcula cada fotograma: los editores mutan el perfil en sitio
+    const l = makeLook(this.profile);
+    l.auraFn = l.auraRainbow ? (t => hslInt((t * 3) % 360)) : null;
+    return l;
   }
   update() {
-    this.f++;
-    const a = this.anim;
-    if (CELEBRATIONS[a] || DEFEATS[a]) {
-      const c = CELEBRATIONS[a] || DEFEATS[a];
-      playCelebration(c, this.f, this.pose);
-    } else if (POSES[a]) { copyPose(POSES[a], this.pose); MODS.breathe(this.pose, this.f); }
-    else { copyPose(POSES.guard, this.pose); MODS.breathe(this.pose, this.f); }
+    // avance por tiempo real (fluido aunque baje el framerate) y bucles de celebración sin saltos
+    const dt = Math.min(3, (this.s.game.loop.delta || 16.67) / 16.667);
+    this.f += dt;
+    const a = this.anim, f = this.f;
+    if (CELEBRATIONS[a] || DEFEATS[a]) playCelebration(CELEBRATIONS[a] || DEFEATS[a], f, this.pose);
+    else if (POSES[a]) { copyPose(POSES[a], this.pose); MODS.breathe(this.pose, f); }
+    else { copyPose(POSES.guard, this.pose); MODS.breathe(this.pose, f); }
     computeJoints(this.pose, this.x, this.y, this.facing, this.scale, true, this.j);
     this.g.clear(); this.glow.clear();
-    this.glow.fillStyle(0x000000, 0.4); this.g.fillStyle(0x000000, 0.35); this.g.fillEllipse(this.x, this.y + 4, 90 * this.scale, 14 * this.scale);
-    drawBody(this.g, this.glow, this.j, this.pose, this.scale, this.look(), 1, { glow: this.glowAmt, time: this.f });
+    const lk = this.look();
+    if (this.auraL) {
+      this.auraL.begin();
+      this.auraL.shadow({ scale: this.scale, y: this.y, groundY: this.y, facing: this.facing }, this.j, 0.15, 1);
+      this.auraL.draw(this.key, this.j, this.scale, lk.auraFn ? lk.auraFn(f) : lk.aura, this.glowAmt, lk.auraStyle, f, 1, { rainbow: lk.auraRainbow });
+      this.auraL.end();
+    }
+    drawBody(this.g, this.glow, this.j, this.pose, this.scale, lk, 1, { glow: 0, time: f, cloth: this.cloth });
   }
-  destroy() { this.g.destroy(); this.glow.destroy(); }
+  destroy() { this.g.destroy(); this.glow.destroy(); if (this.auraL) this.auraL.destroy(); }
 }
+let PREV_ID = 0;
 
 function hslInt(h) {
   const s = 1, l = 0.6;

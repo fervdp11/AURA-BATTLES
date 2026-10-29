@@ -28,6 +28,7 @@ export function makePose(p = {}) {
   for (const k of NUM) o[k] = p[k] ?? BASE_POSE[k];
   for (const k of VEC) { const v = p[k] || BASE_POSE[k]; o[k] = [v[0], v[1]]; }
   o.hsn = p.hsn ?? BASE_POSE.hsn; o.hsf = p.hsf ?? BASE_POSE.hsf; o.face = p.face ?? BASE_POSE.face;
+  o.pt = p.pt ?? ''; // pie con la punta estirada ('n' | 'f'): patadas verticales
   // pies levantados por defecto no se anclan al suelo
   if (p.pn === undefined) o.pn = o.fn[1] < -4 ? 0 : 1;
   if (p.pf === undefined) o.pf = o.ff[1] < -4 ? 0 : 1;
@@ -38,7 +39,7 @@ export function copyPose(src, dst) {
   dst = dst || makePose(src);
   for (const k of NUM) dst[k] = src[k];
   for (const k of VEC) { dst[k][0] = src[k][0]; dst[k][1] = src[k][1]; }
-  dst.hsn = src.hsn; dst.hsf = src.hsf; dst.face = src.face;
+  dst.hsn = src.hsn; dst.hsf = src.hsf; dst.face = src.face; dst.pt = src.pt || '';
   return dst;
 }
 
@@ -47,7 +48,7 @@ export function lerpPose(a, b, t, out) {
   for (const k of NUM) out[k] = a[k] + (b[k] - a[k]) * t;
   for (const k of VEC) { out[k][0] = a[k][0] + (b[k][0] - a[k][0]) * t; out[k][1] = a[k][1] + (b[k][1] - a[k][1]) * t; }
   const pick = t < 0.5 ? a : b;
-  out.hsn = pick.hsn; out.hsf = pick.hsf; out.face = pick.face;
+  out.hsn = pick.hsn; out.hsf = pick.hsf; out.face = pick.face; out.pt = (t < 0.35 ? a : b).pt || '';
   return out;
 }
 

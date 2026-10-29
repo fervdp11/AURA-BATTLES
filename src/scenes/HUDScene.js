@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { Save } from '../core/Save.js';
 import { Audio } from '../core/Audio.js';
-import { txt, StickPreview } from '../ui/UI.js';
+import { txt, StickPreview, autoGrad } from '../ui/UI.js';
 import { hex, mix } from '../view/StickRenderer.js';
 import { STATUS } from '../sim/status.js';
 import { MOVES } from '../sim/moves.js';
@@ -154,7 +154,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   makePortrait(f, x, y, facing, ring) {
-    const prev = new StickPreview(this, x - facing * 6, y + 300, f.profile, { scale: 2.1, facing, anim: 'guard', depth: 3, glow: 0.3 });
+    const prev = new StickPreview(this, x - facing * 6, y + 300, f.profile, { scale: 2.1, facing, anim: 'guard', depth: 3, glow: 0.3, aura: false });
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff); mg.fillCircle(x, y, 40);
     const mask = mg.createGeometryMask();
     prev.g.setMask(mask); prev.glow.setMask(mask);
@@ -250,7 +250,7 @@ export class HUDScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.78); g.fillRect(-200, 250, 1680, 210);
     g.fillStyle(col, 0.9); g.fillRect(-200, 250, 1680, 8); g.fillRect(-200, 452, 1680, 8);
     for (let i = 0; i < 30; i++) { g.fillStyle(col, 0.15); g.fillRect(Math.random() * 1280, 262 + Math.random() * 180, 80 + Math.random() * 200, 3); }
-    const prev = new StickPreview(this, left ? 300 : 980, 690, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4 });
+    const prev = new StickPreview(this, left ? 300 : 980, 690, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4, aura: false });
     const m = this.make.graphics({ add: false }); m.fillStyle(0xffffff); m.fillRect(0, 258, 1280, 194);
     const mask = m.createGeometryMask(); prev.g.setMask(mask); prev.glow.setMask(mask);
     const nm = def.name.toUpperCase();
@@ -491,7 +491,8 @@ export class HUDScene extends Phaser.Scene {
     tH.setText(n + ' HITS');
     const lab = COMBO_LABELS.find(c => n >= c[0]);
     tL.setText(lab ? lab[1] : '').setColor(lab ? lab[2] : '#ffffff');
-    if (lab) tH.setTint(0xffffff, 0xffffff, hex(lab[2]), hex(lab[2])); else tH.clearTint();
+    const gc = lab ? lab[2] : '#ffffff';
+    if (tH._gc !== gc) { tH._gc = gc; autoGrad(tH, gc); }
     if (tD) tD.setText(Math.round(f.combo.dmg) + ' de aura');
     const a = Math.min(1, f.combo.t / 20);
     tH.setAlpha(a); tL.setAlpha(a); if (tD) tD.setAlpha(a);

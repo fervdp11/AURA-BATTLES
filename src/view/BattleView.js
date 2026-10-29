@@ -8,6 +8,8 @@ import { MOVES, FINISHERS } from '../sim/moves.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.js';
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
+import { AuraLayer } from './AuraFX.js';
+import { makeLook } from '../data/cosmetics.js';
 import { drawShark, drawCrocPlane, drawTungTung, drawBallerina, drawRoots, drawLirili } from './Brainrot.js';
 
 const STRENGTH_SFX = { light: 'hitLight', medium: 'hitMed', heavy: 'hitHeavy', mega: 'hitMega' };
@@ -35,7 +37,10 @@ export class BattleView {
     this.shakeMul = opts.shake ?? 1;
     this.arena = new Arena(scene, opts.arena || 'rooftop', { quality: opts.quality });
     const add = scene.add;
-    this.gRefl = add.graphics().setDepth(-50).setAlpha(this.arena.reflect);
+    // reflejo: se dibuja opaco en una textura y la transparencia se aplica a la imagen entera (sin solapes visibles)
+    this.gRefl = add.graphics().setVisible(false);
+    this.reflRT = this.arena.reflect > 0 ? add.renderTexture(0, 0, 2600, 520).setOrigin(0, 0).setDepth(-50).setAlpha(this.arena.reflect) : null;
+    this.aura = new AuraLayer(scene, 7);
     this.gShadow = add.graphics().setDepth(-5);
     this.gBack = add.graphics().setDepth(5);
     this.gGlow = add.graphics().setDepth(8).setBlendMode('ADD');
@@ -75,13 +80,8 @@ export class BattleView {
   lookFor(f) {
     let l = this.looks.get(f.id);
     if (l) return l;
-    const p = f.profile;
-    const rainbow = p.aura === 'rainbow';
-    l = {
-      body: hex(p.color || '#f4f4f8'), accent: hex(p.accent || '#ffd166'), aura: rainbow ? 0xffffff : hex(p.aura || '#7df9ff'),
-      accessory: p.accessory || 'none', outline: p.boss ? 0x14000a : 0x0a0a14,
-      auraFn: rainbow ? (t => hsl((t * 3) % 360, 1, 0.6)) : null
-    };
+    l = makeLook(f.profile);
+    l.auraFn = l.auraRainbow ? (t => hsl((t * 3) % 360, 1, 0.6)) : null;
     this.looks.set(f.id, l);
     return l;
   }
@@ -104,6 +104,7 @@ export class BattleView {
   drawFighters() {
     const b = this.b, gb = this.gBody, gg = this.gGlow, go = this.gOver, ga = this.gOverAdd, gs = this.gShadow, gk = this.gBack;
     gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear(); this.gRefl.clear();
+    this.aura.begin();
     const list = [...b.fighters].sort((a, c) => (a.alive ? 1 : 0) - (c.alive ? 1 : 0) || (a.state === 'attack' ? 1 : 0) - (c.state === 'attack' ? 1 : 0));
     const multi = b.fighters.filter(f => !f.decoyOf).length > 2;
     for (const f of list) {
@@ -115,20 +116,13 @@ export class BattleView {
       }
       const look = this.lookFor(f);
       if (f.decoyOf) Object.assign(look, this.lookFor(f.decoyOf));
-      // sombra
-      const hAbove = Math.max(0, GROUND_Y - f.y);
-      if (f.visible) {
-        // sombra suave en capas + sombras de contacto bajo cada pie apoyado
-        const k = Math.max(0.2, 1 - hAbove / 400), wsh = 74 * f.scale * Math.max(0.4, 1 - hAbove / 500);
-        for (let i = 0; i < 3; i++) { gs.fillStyle(0x000000, 0.12 * k); gs.fillEllipse(f.x, GROUND_Y + 4, wsh * (1.3 - i * 0.2), 16 * f.scale * (1.2 - i * 0.15)); }
-        const j = f.joints;
-        for (const fx2 of [j.nFootX, j.fFootX]) { const fy = j[fx2 === j.nFootX ? 'nFootY' : 'fFootY'], c = Math.max(0, 1 - (GROUND_Y - fy) / 40); if (c > 0) { gs.fillStyle(0x000000, 0.3 * c); gs.fillEllipse(fx2, GROUND_Y + 2, 22 * f.scale, 6 * f.scale); } }
-      }
+      // sombra suave proyectada según la luz del escenario
+      if (f.visible && f.joints.hipX !== undefined) this.aura.shadow(f, f.joints, this.arena.lightDx ?? 0.2, f.alpha ?? 1);
       if (!f.visible) continue;
       // reflejo en suelos brillantes
       if (this.arena.reflect > 0 && f.alive !== undefined) {
         const rj = mirrorJoints(f.joints, _reflJ);
-        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t });
+        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t, pantsDrop: f.pantsDrop || 0 });
       }
       // KO en 1vN: desvanecer
       let alpha = f.alpha ?? 1;
@@ -149,56 +143,26 @@ export class BattleView {
       if (f.hasStatus('auraWalk') || f.hasStatus('nahIdWin') || f.hasStatus('mainChar') || f.hasStatus('domain') || f.hasStatus('goblin')) glow += 0.6;
       if (f.state === 'attack' && f.move && f.move.def.slot === 'ult') glow += 0.8;
       if (f.boss) glow += 0.3;
-      if (f.auraPct < 0.25 && f.alive) glow *= 0.5 + Math.random() * 0.5;
-      // llamas de aura con la ultimate cargada o buffs fuertes
-      if (f.alive && (f.energy >= 100 || glow > 1.2)) {
-        const ac = look.auraFn ? look.auraFn(this.t) : look.aura;
-        const j = f.joints;
-        for (let i = 0; i < 7; i++) {
-          const ph = this.t * 0.22 + i * 1.7;
-          const bx = j.hipX + (i - 3) * 9 * f.scale, by = j.hipY + 30 * f.scale - Math.abs(i - 3) * 6;
-          const h = (70 + Math.sin(ph) * 25 + (i % 2) * 20) * f.scale;
-          const sway = Math.sin(ph * 0.7) * 10 * f.scale;
-          gg.fillStyle(ac, 0.13);
-          gg.fillTriangle(bx - 12 * f.scale, by, bx + 12 * f.scale, by, bx + sway, by - h);
-        }
-      }
-      // partículas de aura
-      if (f.alive && Math.random() < 0.12 + glow * 0.25) this.fx.motes(f.joints.hipX, f.joints.hipY - 20 * f.scale, look.auraFn ? look.auraFn(this.t) : look.aura, 1, 40 * f.scale);
+      if (f.auraPct < 0.25 && f.alive) glow *= 0.65 + Math.sin(this.t * 0.35) * 0.25;
+      // aura profesional por sprites suaves (resplandor en capas, llamas y partículas del estilo equipado)
+      this.aura.draw(f.id, f.joints, f.scale, look.auraFn ? look.auraFn(this.t) : look.aura, glow, look.auraStyle, this.t, alpha, { rainbow: look.auraRainbow });
       const flashK = f.flash > 0 ? Math.min(1, f.flash / 4) : 0;
       const shades = !!f.hasStatus('cool') || (f.state === 'attack' && f.move && f.move.def.id === 'sigmaRule');
       const lk = shades ? { ...look, shades: true } : look;
       if (f.flash > 0) lk.flashColor = f.hitFlashColor;
       drawFighter(gb, gg, f, lk, {
-        alpha, glow, flash: flashK * 0.85, time: this.t,
+        alpha, glow: 0, flash: flashK * 0.85, time: this.t,
         eyeGlow: f.move && (f.move.def.id === 'sigmaStare' || f.move.def.id === 'bombasticSideEye'),
         prop: this.propFor(f)
       });
       if (ox) { f.x -= ox; shiftAll(f.joints, -ox); }
-      if (f.pantsDown) this.drawBoxers(f, look, go);
       this.drawWeaponTrail(f, look);
       this.drawStatus(f, look, go, ga);
       // marcadores
       if (multi && f.alive && !f.decoyOf) this.drawTag(f, look, go);
     }
-  }
-
-  // calzoncillos de corazones y pantalones por los tobillos (remate "Bajada de Pantalones")
-  drawBoxers(f, look, g) {
-    const j = f.joints, s = f.scale;
-    const kx = (a, b, t) => a + (b - a) * t;
-    for (const k of ['n', 'f']) {
-      const x1 = j.hipX, y1 = j.hipY, x2 = kx(j.hipX, j[k + 'KneeX'], 0.45), y2 = kx(j.hipY, j[k + 'KneeY'], 0.45);
-      g.lineStyle(17 * s, 0x0a0a14, 1); g.lineBetween(x1, y1, x2, y2);
-      g.lineStyle(14 * s, 0xffffff, 1); g.lineBetween(x1, y1, x2, y2);
-      heartShape(g, kx(x1, x2, 0.55), kx(y1, y2, 0.55), 3 * s, 0xff3b6b, 1);
-      // pantalón arrugado en el tobillo
-      g.fillStyle(0x0a0a14, 1); g.fillEllipse(j[k + 'FootX'], j[k + 'FootY'] - 7 * s, 26 * s, 12 * s);
-      g.fillStyle(shade(look.accent, 0.7), 1); g.fillEllipse(j[k + 'FootX'], j[k + 'FootY'] - 7 * s, 22 * s, 9 * s);
-    }
-    g.fillStyle(0xffffff, 1); g.fillCircle(j.hipX, j.hipY, 10 * s);
-    heartShape(g, j.hipX + f.facing * 2 * s, j.hipY - 2 * s, 3.4 * s, 0xff3b6b, 1);
-    g.fillStyle(0xff3b6b, 1); g.fillRect(j.hipX - 11 * s, j.hipY - 9 * s, 22 * s, 3 * s);
+    this.aura.end();
+    if (this.reflRT) { const ox = -300, oy = GROUND_Y; this.reflRT.setPosition(ox, oy); this.reflRT.clear(); this.reflRT.draw(this.gRefl, -ox, -oy); }
   }
 
   drawTag(f, look, g) {
@@ -864,6 +828,7 @@ export class BattleView {
   destroy() {
     this.arena.destroy();
     this.fx.destroy();
+    this.aura.destroy(); if (this.reflRT) this.reflRT.destroy();
     for (const g of [this.gRefl, this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
     if (this.cam.postFX) { try { this.cam.postFX.clear(); } catch (e) { /* nada */ } }
   }
