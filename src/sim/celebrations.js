@@ -74,7 +74,7 @@ export const CELEBRATION_IDS = Object.keys(CELEBRATIONS);
 export const DEFEATS = {
   kneel: { name: 'De rodillas', anim: k([[0, 'hurt'], [14, C.kneelA, 'out'], [40, C.kneelB, 'inOut'], [80, C.kneelA, 'inOut']], [14, 80]) },
   slump: { name: 'Hundido', anim: k([[0, 'hurt'], [20, C.slumpA, 'out'], [60, C.slumpA]], [20, 60]), mods: [[20, 9999, 'breathe']] },
-  rage: { name: 'Golpe al suelo', anim: k([[0, 'hurt'], [12, C.kneelA, 'out'], [24, C.punchGroundW, 'out'], [30, C.punchGround, 'snap'], [50, C.punchGround], [62, C.punchGroundW, 'inOut'], [68, C.punchGround, 'snap'], [90, C.punchGround]], [24, 90]) },
+  rage: { name: 'Golpe al suelo', anim: k([[0, 'hurt'], [12, C.kneelA, 'out'], [24, C.punchGroundW, 'out'], [30, C.punchGround, 'snap'], [50, C.punchGround], [62, C.punchGroundW, 'inOut'], [68, C.punchGround, 'snap'], [90, C.punchGround], [102, C.punchGroundW, 'inOut']], [24, 102]) },
   shrug: { name: 'Encogerse', anim: k([[0, 'hurt'], [16, C.headDown, 'out'], [40, C.shrugA, 'back'], [60, C.headDown, 'inOut'], [90, C.headDown]], [16, 90]) }
 };
 export const DEFEAT_IDS = Object.keys(DEFEATS);

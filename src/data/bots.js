@@ -135,10 +135,18 @@ const POOLS = {
   zoner: { sp: ['tralalero', 'brrPatapim', 'rizzLean', 'rizz', 'invisibleDap', 'phantomDap', 'sheesh', 'ratio', 'aimbot', 'emotionalDamage', 'bingChilling', 'crowdControl', 'touchGrass', 'bombardiro', 'dealWithIt', 'bombasticSideEye', 'bananaSlip', 'sigmaStare'], ult: ['brainrotInvasion', 'rizzStorm', 'finalAuraJudgment'] },
   counter: { sp: ['mewingGlare', 'headPalm', 'sigmaTurn', 'unoReverse', 'noReaction', 'clapBack', 'flossShield', 'sideEye', 'caughtIn4K', 'disrespectfulDodge', 'ankleBreaker', 'holdUp', 'bigBrain', 'fakeHighFive', 'sigmaStare', 'hitTheWoah', 'ballerinaSpin'], ult: ['ultimateNonchalance', 'timeStop', 'sigmaRule'] },
   trickster: { sp: ['fakeGreeting', 'liriliLarila', 'sigmaTurn', 'sigmaTeleport', 'susVent', 'delulu', 'reverseAura', 'lagSpike', 'ohioMode', 'emoteCancel', 'noLook360', 'spidermanPoint', 'dramaticEntrance', 'shush', 'backflipDiss', 'invisibleDap'], ult: ['brainrotInvasion', 'timeStop', 'domainExpansion'] },
-  grappler: { sp: ['handshakeHeadbutt', 'doubleSlap', 'menacingPose', 'fakeHandshake', 'fanumTax', 'cooked', 'auraTheft', 'gigachadJaw', 'bonk', 'tungTung', 'omaeWaMou', 'vineBoom', 'hitTheWoah', 'falconPunch'], ult: ['coffinDance', 'sixSevenBarrage'] },
-  showboat: { sp: ['snapWalk', 'defaultDance', 'shoulderBrush', 'menacingPose', 'broReallyThought', 'lBozo', 'ggEz', 'skillIssue', 'mog', 'mainCharacter', 'siuuu', 'auraFarming', 'dabOn', 'nahIdWin', 'rizz', 'micDrop'], ult: ['mainCharacterEnding', 'rizzStorm', 'sigmaRule'] },
+  grappler: { sp: ['teabag', 'handshakeHeadbutt', 'doubleSlap', 'menacingPose', 'fakeHandshake', 'fanumTax', 'cooked', 'auraTheft', 'gigachadJaw', 'bonk', 'tungTung', 'omaeWaMou', 'vineBoom', 'hitTheWoah', 'falconPunch'], ult: ['coffinDance', 'sixSevenBarrage'] },
+  showboat: { sp: ['teabag', 'snapWalk', 'defaultDance', 'shoulderBrush', 'menacingPose', 'broReallyThought', 'lBozo', 'ggEz', 'skillIssue', 'mog', 'mainCharacter', 'siuuu', 'auraFarming', 'dabOn', 'nahIdWin', 'rizz', 'micDrop'], ult: ['mainCharacterEnding', 'rizzStorm', 'sigmaRule'] },
   chill: { sp: ['snapWalk', 'shoulderBrush', 'headPalm', 'chillGuy', 'mewing', 'infiniteMewing', 'auraWalk', 'npcMode', 'afk', 'thisIsFine', 'stonks', 'letHimCook', 'perfectlyBalanced', 'sideEye', 'invisibleDap', 'noReaction'], ult: ['mainCharacterEnding', 'ultimateNonchalance', 'auraOverload'] },
   balanced: { sp: ['fakeGreeting', 'tralalero', 'sixSevenSlam', 'sixSeven', 'fakeHandshake', 'siuuu', 'rizz', 'mewing', 'sigmaStare', 'unoReverse', 'sigmaTeleport', 'hitTheWoah', 'phantomDap', 'auraWalk', 'bonk', 'nahIdWin', 'clapBack'], ult: ['sixSevenBarrage', 'finalAuraJudgment', 'sigmaRule', 'ultimateNonchalance'] }
+};
+
+// humillaciones de aura según la personalidad del bot
+const HUM_BY_STYLE = {
+  showboat: ['hum_goodBoy', 'hum_selfie', 'hum_slowClap'], chill: ['hum_sigmaNap', 'hum_yawn', 'hum_tieShoe'],
+  counter: ['hum_thumbsUp', 'hum_dustOff', 'hum_checkWatch'], rushdown: ['hum_goodBoy', 'hum_consolePat', 'hum_dustOff'],
+  zoner: ['hum_tieShoe', 'hum_slowClap', 'hum_checkWatch'], trickster: ['hum_selfie', 'hum_dustOff', 'hum_slowClap'],
+  grappler: ['hum_consolePat', 'hum_goodBoy', 'hum_thumbsUp'], balanced: ['hum_goodBoy', 'hum_thumbsUp', 'hum_checkWatch']
 };
 
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -162,7 +170,8 @@ function buildLoadout(name, style, level) {
   }
   const ults = pool.ult.filter(id => tierOf(id) <= maxTier(level) + 1);
   const ult = (ults.length ? ults : ['sixSevenBarrage', 'rizzStorm'])[h % (ults.length || 2)];
-  return { special: pick[0], specialF: pick[1], specialD: pick[2], skill1: pick[3], skill2: pick[4], ult };
+  const hums = HUM_BY_STYLE[style] || HUM_BY_STYLE.balanced;
+  return { special: pick[0], specialF: pick[1], specialD: pick[2], skill1: pick[3], skill2: pick[4], ult, hum1: hums[0], hum2: hums[1], hum3: hums[2] };
 }
 
 function make(r, i, boss) {

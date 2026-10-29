@@ -2,25 +2,25 @@
 // y navegación de menús por pila de foco.
 import { emptyInput } from '../sim/constants.js';
 
-export const ACTIONS = ['left', 'right', 'up', 'down', 'light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'dash', 'block', 'pause'];
+export const ACTIONS = ['left', 'right', 'up', 'down', 'light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'taunt', 'dash', 'block', 'pause'];
 
 export const DEFAULT_PROFILES = {
   // un jugador contra bots
   solo: {
     left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'],
-    light: ['KeyZ'], heavy: ['KeyX'], special: ['KeyC'], skill1: ['KeyA'], skill2: ['KeyS'], ult: ['KeyD'],
+    light: ['KeyZ'], heavy: ['KeyX'], special: ['KeyC'], skill1: ['KeyA'], skill2: ['KeyS'], ult: ['KeyD'], taunt: ['KeyV'],
     dash: ['ShiftLeft', 'ShiftRight'], block: ['Space'], pause: ['Escape', 'KeyP']
   },
   // multijugador local: J1 a la izquierda del teclado
   p1: {
     left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'],
-    light: ['KeyF'], heavy: ['KeyG'], special: ['KeyH'], skill1: ['KeyR'], skill2: ['KeyT'], ult: ['KeyV'],
+    light: ['KeyF'], heavy: ['KeyG'], special: ['KeyH'], skill1: ['KeyR'], skill2: ['KeyT'], ult: ['KeyV'], taunt: ['KeyE'],
     dash: ['ShiftLeft'], block: ['Space'], pause: ['Escape']
   },
   // J2 a la derecha (flechas + J K L I O P, Enter; también teclado numérico)
   p2: {
     left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'],
-    light: ['KeyJ', 'Numpad1'], heavy: ['KeyK', 'Numpad2'], special: ['KeyL', 'Numpad3'], skill1: ['KeyI', 'Numpad4'], skill2: ['KeyO', 'Numpad5'], ult: ['KeyP', 'Numpad6'],
+    light: ['KeyJ', 'Numpad1'], heavy: ['KeyK', 'Numpad2'], special: ['KeyL', 'Numpad3'], skill1: ['KeyI', 'Numpad4'], skill2: ['KeyO', 'Numpad5'], ult: ['KeyP', 'Numpad6'], taunt: ['KeyU', 'Numpad7'],
     dash: ['ShiftRight', 'Numpad0'], block: ['Enter', 'NumpadEnter'], pause: ['Escape']
   }
 };
@@ -30,7 +30,7 @@ const SAVE_KEYS = { solo: 'bindings', p1: 'bindingsP1', p2: 'bindingsP2' };
 
 export const ACTION_LABELS = {
   left: 'Izquierda', right: 'Derecha', up: 'Saltar', down: 'Agacharse', light: 'Ataque rápido', heavy: 'Ataque fuerte',
-  special: 'Especial', skill1: 'Habilidad 1', skill2: 'Habilidad 2', ult: 'Ultimate', dash: 'Dash / Esquiva', block: 'Bloqueo / Parry', pause: 'Pausa'
+  special: 'Especial', skill1: 'Habilidad 1', skill2: 'Habilidad 2', ult: 'Ultimate', taunt: 'Humillación de aura', dash: 'Dash / Esquiva', block: 'Bloqueo / Parry', pause: 'Pausa'
 };
 
 export function keyName(code) {
@@ -75,6 +75,14 @@ class InputManager {
   setBindings(b, prof = 'solo') {
     const out = clone(DEFAULT_PROFILES[prof]);
     if (b) for (const k in b) if (Array.isArray(b[k]) && b[k].length && out[k]) out[k] = b[k];
+    // acciones nuevas en guardados antiguos: su tecla por defecto no puede pisar una tecla ya usada
+    if (b) for (const a in out) {
+      if (b[a] && b[a].length) continue;
+      const used = new Set(); for (const k in out) if (k !== a) for (const c of out[k]) used.add(c);
+      const free = out[a].filter(c => !used.has(c));
+      if (free.length) out[a] = free;
+      else { const alt = ['KeyV', 'KeyB', 'KeyN', 'KeyQ', 'KeyE', 'KeyY', 'KeyU', 'KeyM', 'Digit1', 'Digit2'].find(c => !used.has(c)); out[a] = alt ? [alt] : []; }
+    }
     this.profiles[prof] = out;
   }
   resetProfile(prof) { this.profiles[prof] = clone(DEFAULT_PROFILES[prof]); }
@@ -182,7 +190,7 @@ class InputManager {
         cur.left = btn(14) || ax[0] < -0.5; cur.right = btn(15) || ax[0] > 0.5;
         cur.up = btn(12) || ax[1] < -0.6; cur.down = btn(13) || ax[1] > 0.6;
         cur.light = btn(2); cur.heavy = btn(3); cur.special = btn(1); cur.skill1 = btn(4); cur.skill2 = btn(5); cur.ult = btn(7);
-        cur.dash = btn(6) || btn(10); cur.block = btn(0); cur.pause = btn(9);
+        cur.dash = btn(6) || btn(10); cur.block = btn(0); cur.pause = btn(9); cur.taunt = btn(11) || btn(8);
       }
       const P = this.pads[i];
       P.prev = P.cur; P.cur = cur;
@@ -205,7 +213,7 @@ class InputManager {
     const was = a => { for (const c of this.codesFor(a, prof)) if (this.pressed.has(c)) return true; return pp.has(a); };
     inp.l = held('left'); inp.r = held('right'); inp.u = held('up'); inp.d = held('down');
     inp.pu = was('up'); inp.pd = was('down');
-    for (const a of ['light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'dash', 'block']) {
+    for (const a of ['light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'dash', 'block', 'taunt']) {
       inp.held[a] = held(a); inp.pressed[a] = was(a);
     }
     for (const a of ACTIONS) for (const c of this.codesFor(a, prof)) this.pressed.delete(c);

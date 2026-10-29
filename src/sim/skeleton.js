@@ -7,6 +7,7 @@
 //  hn/hf: mano cercana / lejana respecto al hombro.
 //  fn/ff: pie cercano / lejano respecto a la raíz (y = 0 apoyado en el suelo, negativo = levantado).
 //  en/ef, kn/kf: pistas de dirección para codos y rodillas.
+import { dsin, dcos, dhypot, ipow } from './dmath.js';
 
 export const BONES = { thigh: 40, shin: 39, torso: 54, neck: 9, headR: 15, upper: 31, fore: 29, hand: 6, foot: 13, shoulderDrop: 6 };
 export const STAND_HIP = -76;
@@ -28,6 +29,7 @@ export function makePose(p = {}) {
   for (const k of NUM) o[k] = p[k] ?? BASE_POSE[k];
   for (const k of VEC) { const v = p[k] || BASE_POSE[k]; o[k] = [v[0], v[1]]; }
   o.hsn = p.hsn ?? BASE_POSE.hsn; o.hsf = p.hsf ?? BASE_POSE.hsf; o.face = p.face ?? BASE_POSE.face;
+  o.pt = p.pt ?? ''; // pie con la punta estirada ('n' | 'f'): patadas verticales
   // pies levantados por defecto no se anclan al suelo
   if (p.pn === undefined) o.pn = o.fn[1] < -4 ? 0 : 1;
   if (p.pf === undefined) o.pf = o.ff[1] < -4 ? 0 : 1;
@@ -38,7 +40,7 @@ export function copyPose(src, dst) {
   dst = dst || makePose(src);
   for (const k of NUM) dst[k] = src[k];
   for (const k of VEC) { dst[k][0] = src[k][0]; dst[k][1] = src[k][1]; }
-  dst.hsn = src.hsn; dst.hsf = src.hsf; dst.face = src.face;
+  dst.hsn = src.hsn; dst.hsf = src.hsf; dst.face = src.face; dst.pt = src.pt || '';
   return dst;
 }
 
@@ -47,7 +49,7 @@ export function lerpPose(a, b, t, out) {
   for (const k of NUM) out[k] = a[k] + (b[k] - a[k]) * t;
   for (const k of VEC) { out[k][0] = a[k][0] + (b[k][0] - a[k][0]) * t; out[k][1] = a[k][1] + (b[k][1] - a[k][1]) * t; }
   const pick = t < 0.5 ? a : b;
-  out.hsn = pick.hsn; out.hsf = pick.hsf; out.face = pick.face;
+  out.hsn = pick.hsn; out.hsf = pick.hsf; out.face = pick.face; out.pt = (t < 0.35 ? a : b).pt || '';
   return out;
 }
 
@@ -55,10 +57,10 @@ export const ease = {
   linear: t => t,
   out: t => 1 - (1 - t) * (1 - t),
   in: t => t * t,
-  inOut: t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
-  back: t => { const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
-  snap: t => 1 - Math.pow(1 - t, 4),
-  anticip: t => (t < 0.25 ? -0.15 * Math.sin(t * 4 * Math.PI) : 1 - Math.pow(1 - (t - 0.25) / 0.75, 3)),
+  inOut: t => (t < 0.5 ? 2 * t * t : 1 - ipow(-2 * t + 2, 2) / 2),
+  back: t => { const c = 1.7; return 1 + (c + 1) * ipow(t - 1, 3) + c * ipow(t - 1, 2); },
+  snap: t => 1 - ipow(1 - t, 4),
+  anticip: t => (t < 0.25 ? -0.15 * dsin(t * 4 * Math.PI) : 1 - ipow(1 - (t - 0.25) / 0.75, 3)),
   hold: t => (t < 1 ? 0 : 1)
 };
 
@@ -66,7 +68,7 @@ export const ease = {
 // Devuelve [mx, my, ex, ey] (articulación media y extremo alcanzado).
 export function ik2(ax, ay, tx, ty, l1, l2, hx, hy, out) {
   let dx = tx - ax, dy = ty - ay;
-  let d = Math.hypot(dx, dy);
+  let d = dhypot(dx, dy);
   const max = l1 + l2 - 0.01, min = Math.abs(l1 - l2) + 0.5;
   if (d < 1e-4) { dx = 0; dy = 1; d = 1e-4; }
   const dc = Math.max(min, Math.min(max, d));
@@ -91,14 +93,14 @@ export function computeJoints(pose, x, y, facing, scale, grounded, out, o = null
   out = out || {};
   const s = scale, B = BONES;
   const spin = pose.spin || 0;
-  const fx = facing * (spin ? (Math.abs(Math.cos(spin * D2R)) < 0.06 ? 0.06 * Math.sign(Math.cos(spin * D2R) || 1) : Math.cos(spin * D2R)) : 1);
+  const fx = facing * (spin ? (Math.abs(dcos(spin * D2R)) < 0.06 ? 0.06 * Math.sign(dcos(spin * D2R) || 1) : dcos(spin * D2R)) : 1);
   const hipX = x + pose.hip[0] * fx * s, hipY = y + pose.hip[1] * s;
   const L = pose.lean * D2R;
-  const neckX = hipX + Math.sin(L) * fx * B.torso * s, neckY = hipY - Math.cos(L) * B.torso * s;
-  const shX = neckX - Math.sin(L) * fx * B.shoulderDrop * s, shY = neckY + Math.cos(L) * B.shoulderDrop * s;
+  const neckX = hipX + dsin(L) * fx * B.torso * s, neckY = hipY - dcos(L) * B.torso * s;
+  const shX = neckX - dsin(L) * fx * B.shoulderDrop * s, shY = neckY + dcos(L) * B.shoulderDrop * s;
   const H = (pose.lean + pose.head) * D2R;
   const hd = (B.neck + B.headR) * s;
-  const headX = neckX + Math.sin(H) * fx * hd, headY = neckY - Math.cos(H) * hd;
+  const headX = neckX + dsin(H) * fx * hd, headY = neckY - dcos(H) * hd;
 
   // brazos
   const arm = (key, tgt, hint, ovr) => {
@@ -167,9 +169,9 @@ export function bodySurface(j, px, py, dirX) {
   const vx = bx - ax, vy = by - ay;
   const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
   const cx = ax + vx * t, cy = ay + vy * t;
-  const dT = Math.hypot(px - cx, py - cy);
+  const dT = dhypot(px - cx, py - cy);
   const hr = j.headR + 2 * s;
-  const dH = Math.hypot(px - j.headX, py - j.headY);
+  const dH = dhypot(px - j.headX, py - j.headY);
   if (dH < hr && dH - hr < dT - r) {
     const ux = dH > 0.01 ? (px - j.headX) / dH : -dirX, uy = dH > 0.01 ? (py - j.headY) / dH : 0;
     return { inside: true, x: j.headX + ux * hr, y: j.headY + uy * hr, part: 'head' };

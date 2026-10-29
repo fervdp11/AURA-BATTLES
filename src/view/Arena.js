@@ -66,6 +66,8 @@ export class Arena {
     this.def = ARENAS.find(a => a.id === id) || ARENAS[0];
     this.id = this.def.id;
     this.atmo = ATMO[this.id];
+    // dirección horizontal de la luz principal (las sombras se proyectan hacia el lado contrario)
+    this.lightDx = { rooftop: -0.25, dojo: 0.3, gym: 0.15, highway: -0.35, backrooms: 0, mountain: 0.45, colosseum: 0.2 }[this.id] ?? 0.2;
     this.reflect = o.quality === 'baja' ? 0 : this.atmo.reflect;
     this.q = o.quality === 'baja' ? 0.5 : 1;
     this.objs = [];
@@ -404,24 +406,50 @@ export class Arena {
     this.cars = [];
   }
   update_highway(t) {
-    const g = this.dyn, ga = this.dynAdd;
-    if (this.r() < 0.012) this.cars.push({ x: this.r() < 0.5 ? -800 : 2800, dir: 0, y: 330 + this.r() * 40, col: [0xff2d95, 0x00f0ff, 0xffd166, 0xffffff][Math.floor(this.r() * 4)], sp: 18 + this.r() * 12 });
-    for (const c of this.cars) {
-      if (!c.dir) c.dir = c.x < 0 ? 1 : -1;
-      c.x += c.dir * c.sp;
-      const x = c.x, y = c.y;
-      g.fillStyle(0x0a0a14, 1); g.fillRoundedRect(x - 60, y - 22, 120, 26, 8); g.fillRoundedRect(x - 34, y - 38, 64, 20, 8);
-      g.fillStyle(c.col, 1); g.fillRect(x - 58, y - 10, 116, 3);
-      ga.fillStyle(0xff2222, 0.6); ga.fillCircle(x - c.dir * 58, y - 12, 6);
-      ga.fillStyle(0xff2222, 0.12); ga.fillRect(c.dir > 0 ? x - 360 : x + 60, y - 16, 300, 8);
-      ga.fillStyle(0xfff1c4, 0.25); ga.fillTriangle(x + c.dir * 60, y - 12, x + c.dir * 260, y - 40, x + c.dir * 260, y + 10);
+    const ga = this.dynAdd;
+    // los coches se dibujan en el MISMO espacio de parallax que la carretera (capa media, escala 2):
+    // así las ruedas apoyan siempre sobre el asfalto y la perspectiva coincide con la calzada.
+    if (!this.carG) {
+      this.carG = this.scene.add.graphics().setScrollFactor(0.6, 0.72).setDepth(-89); this.objs.push(this.carG);
+      this.carGA = this.scene.add.graphics().setScrollFactor(0.6, 0.72).setDepth(-88).setBlendMode('ADD'); this.objs.push(this.carGA);
     }
-    this.cars = this.cars.filter(c => c.x > -1000 && c.x < 3000);
+    const g = this.carG, gl = this.carGA; g.clear(); gl.clear();
+    const LX = X0, LY = 80, SC = 2; // origen y escala de la capa media
+    const lanes = [{ y: 204, s: 0.78, dir: -1 }, { y: 226, s: 0.9, dir: 1 }];
+    if (this.r() < 0.012) { const L = lanes[this.r() < 0.5 ? 0 : 1]; this.cars.push({ lane: L, x: L.dir > 0 ? -300 : W / 2 + 300, col: [0xff2d95, 0x00f0ff, 0xffd166, 0xffffff, 0x7b2cbf][Math.floor(this.r() * 5)], sp: 3 + this.r() * 2.5, spin: 0 }); }
+    this.cars.sort((a, b) => a.lane.y - b.lane.y);
+    for (const c of this.cars) {
+      const L = c.lane, sc = L.s * SC, d = L.dir;
+      c.x += d * c.sp; c.spin += c.sp * 0.25;
+      const x = LX + c.x * SC, base = LY + L.y * SC; // base = línea del asfalto donde apoyan las ruedas
+      const W2 = 50 * sc, wr = 7 * sc;
+      // sombra en el asfalto
+      g.fillStyle(0x000000, 0.45); g.fillEllipse(x, base + 1 * sc, W2 * 2.1, 5 * sc);
+      // carrocería y cabina
+      g.fillStyle(0x0a0a14, 1); g.fillRoundedRect(x - W2, base - wr - 15 * sc, W2 * 2, 16 * sc, 5 * sc);
+      g.fillStyle(0x16162a, 1); g.fillRoundedRect(x - W2 + 2 * sc, base - wr - 13.5 * sc, W2 * 2 - 4 * sc, 13 * sc, 4 * sc);
+      g.fillStyle(0x0a0a14, 1); g.beginPath(); g.moveTo(x - W2 * 0.55, base - wr - 14 * sc); g.lineTo(x - W2 * 0.3, base - wr - 26 * sc); g.lineTo(x + W2 * 0.35, base - wr - 26 * sc); g.lineTo(x + W2 * 0.62, base - wr - 14 * sc); g.closePath(); g.fillPath();
+      g.fillStyle(0x2c3e66, 1); g.beginPath(); g.moveTo(x - W2 * 0.48, base - wr - 15 * sc); g.lineTo(x - W2 * 0.27, base - wr - 24 * sc); g.lineTo(x + W2 * 0.3, base - wr - 24 * sc); g.lineTo(x + W2 * 0.54, base - wr - 15 * sc); g.closePath(); g.fillPath();
+      g.fillStyle(0x0a0a14, 1); g.fillRect(x + W2 * 0.02, base - wr - 25 * sc, 2 * sc, 10 * sc);
+      g.fillStyle(c.col, 1); g.fillRect(x - W2 + 3 * sc, base - wr - 8 * sc, W2 * 2 - 6 * sc, 2 * sc);
+      // ruedas apoyadas exactamente en la base, con llanta que gira
+      for (const wx of [x - W2 * 0.62, x + W2 * 0.62]) {
+        g.fillStyle(0x050505, 1); g.fillCircle(wx, base - wr, wr);
+        g.fillStyle(0x8a8fa3, 1); g.fillCircle(wx, base - wr, wr * 0.5);
+        g.lineStyle(1.2 * sc, 0x30323d, 1); g.lineBetween(wx + Math.cos(c.spin) * wr * 0.5, base - wr + Math.sin(c.spin) * wr * 0.5, wx - Math.cos(c.spin) * wr * 0.5, base - wr - Math.sin(c.spin) * wr * 0.5);
+      }
+      // faros y pilotos
+      gl.fillStyle(0xfff1c4, 0.9); gl.fillRect(x + d * W2 - (d > 0 ? 3 * sc : 0), base - wr - 12 * sc, 3 * sc, 3 * sc);
+      gl.fillStyle(0xfff1c4, 0.12); gl.fillTriangle(x + d * W2, base - wr - 11 * sc, x + d * (W2 + 120 * sc), base - wr - 22 * sc, x + d * (W2 + 120 * sc), base - wr + 4 * sc);
+      gl.fillStyle(0xff2222, 0.8); gl.fillRect(x - d * W2 - (d > 0 ? 0 : 3 * sc), base - wr - 12 * sc, 3 * sc, 3 * sc);
+      gl.fillStyle(0xff2222, 0.08); gl.fillRect(d > 0 ? x - W2 - 90 * sc : x + W2, base - wr - 12 * sc, 90 * sc, 3 * sc);
+    }
+    this.cars = this.cars.filter(c => c.x > -400 && c.x < W / 2 + 400);
     // calima sobre el asfalto
     ga.fillStyle(0xff6aa8, 0.025 + Math.sin(t * 0.05) * 0.01); ga.fillRect(X0, GROUND_Y - 30, W, 30);
   }
 
-  // ======================= BACKROOMS (fluorescentes, polvo, entidad) =======================
+  // ======================= BACKROOMS (fluorescentes y polvo) =======================
   build_backrooms() {
     const r = this.r;
     const sky = this.bake('sky', 800, 500, (c, w, h) => { vgrad(c, 0, 0, w, h, [[0, '#8f7f3a'], [1, '#c9b458']]); });
@@ -447,20 +475,12 @@ export class Arena {
       c.fillStyle = 'rgba(60,50,20,0.25)'; for (let k = 0; k < 5; k++) { c.beginPath(); c.ellipse(r() * w, 100 + r() * 200, 60 + r() * 80, 15 + r() * 15, 0, 0, 7); c.fill(); }
     });
     this.layer(ground, X0, GROUND_Y - 60, 1, 1, -60);
-    this.entity = { x: 400 + this.r() * 1200, t: 0 };
   }
   update_backrooms(t) {
     const g = this.dynAdd;
     const flick = Math.sin(t * 0.9) > 0.97 || Math.sin(t * 0.13) > 0.995;
     g.fillStyle(0xfffbe0, flick ? 0.0 : 0.05); g.fillRect(X0, -600, W, 1300);
     if (flick) { this.dyn.fillStyle(0x000000, 0.25); this.dyn.fillRect(X0, -600, W, 1300); }
-    const e = this.entity; e.t++;
-    if (e.t % 900 < 120) {
-      const a = Math.sin((e.t % 900) / 120 * Math.PI) * 0.6;
-      const d = this.back; const ex = e.x * 0.5;
-      d.fillStyle(0x000000, a); d.fillRect(ex - 8, GROUND_Y - 160, 16, 96); d.fillCircle(ex, GROUND_Y - 176, 16);
-      d.fillStyle(0xffffff, a); d.fillCircle(ex - 5, GROUND_Y - 179, 2); d.fillCircle(ex + 5, GROUND_Y - 179, 2);
-    } else if (e.t % 900 === 121) e.x = 300 + this.r() * 1400;
   }
 
   // ======================= MONTAÑA SIGMA (atardecer, nieve, nubes, pájaros) =======================

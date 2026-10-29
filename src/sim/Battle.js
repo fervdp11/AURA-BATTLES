@@ -1,8 +1,10 @@
+import { dhypot } from './dmath.js';
 import { GROUND_Y, WALL_L, WALL_R, MAX_ENERGY, JUGGLE_LIMIT, COMBO_HIT_LIMIT, ARENA_W } from './constants.js';
 import { Fighter } from './Fighter.js';
 import { bodySurface, shiftJoints } from './skeleton.js';
-import { MOVES } from './moves.js';
+import { MOVES, FINISHER_SPECS } from './moves.js';
 import { STATUS } from './status.js';
+import { CELEBRATIONS, DEFEATS } from './celebrations.js';
 import { emptyInput } from './constants.js';
 
 // Generador pseudoaleatorio determinista (mulberry32)
@@ -23,12 +25,28 @@ function overlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+// Punto de impacto real de una llave: la mano o el pie del atacante más cercano al cuerpo del rival
+// (el destello, la dirección y la reacción salen de donde toca de verdad, no del centro del rival).
+function lockContactPoint(a, d) {
+  const ja = a.joints, jd = d.joints;
+  if (!ja || !jd || jd.hipX === undefined) return [d.x, d.y - 100 * d.scale];
+  const segD = (px, py, ax, ay, bx, by) => { const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2)); return dhypot(px - ax - vx * t, py - ay - vy * t); };
+  let best = null, bd = Infinity;
+  for (const k of ['nHand', 'fHand', 'nFoot', 'fFoot']) {
+    const x = ja[k + 'X'], y = ja[k + 'Y'];
+    const dist = Math.min(segD(x, y, jd.hipX, jd.hipY, jd.neckX, jd.neckY) - 10 * d.scale, dhypot(x - jd.headX, y - jd.headY) - jd.headR);
+    if (dist < bd) { bd = dist; best = [x, y]; }
+  }
+  return best && bd < 45 * d.scale ? best : [d.x, d.y - 100 * d.scale];
+}
+
 export class Battle {
   constructor(opts) {
     this.opts = opts;
     this.mode = opts.mode || 'versus';
     this.training = !!opts.training;
-    this.rand = rng(opts.seed ?? (Date.now() & 0xffffffff));
+    // estado del generador dentro del propio objeto: la partida se puede copiar/restaurar (red con rollback)
+    this.rngState = (opts.seed ?? (Date.now() & 0xffffffff)) >>> 0;
     this.frame = 0;
     this.events = [];
     this.fighters = [];
@@ -137,6 +155,13 @@ export class Battle {
     this.updatePhase();
   }
 
+  rand() {
+    let a = this.rngState | 0; a = (a + 0x6D2B79F5) | 0; this.rngState = a >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
   snapshot() {
     const s = this.fighters.map(f => ({
       id: f.id, x: f.x, y: f.y, vx: f.vx, vy: f.vy, state: f.state, grounded: f.grounded, facing: f.facing,
@@ -189,7 +214,17 @@ export class Battle {
     if (this.phase === 'over') {
       // el perdedor se levanta del suelo y encaja la derrota (arrodillado, hundido, rabieta o encogerse de hombros)
       if (this.phaseT === 60) for (const f of this.fighters) if (f.team !== this.winnerTeam && !f.decoyOf && f.grounded && (f.state === 'ko' || f.state === 'knockdown')) this.setDefeat(f);
-      if (this.phaseT === 200) this.emit('matchEnd', { result: this.result });
+      // la pantalla de resultados espera a que la celebración y la derrota completen al menos un ciclo
+      if (this.phaseT === 1) {
+        let end = 200;
+        for (const f of this.fighters) {
+          if (f.decoyOf) continue;
+          if (f.state === 'win') { const c = CELEBRATIONS[f.profile && f.profile.celebration] || CELEBRATIONS.flex; end = Math.max(end, (c.anim.loop ? c.anim.loop[1] : 120) + 24); }
+          else if (f.team !== this.winnerTeam) { const d = DEFEATS[f.defeatAnim] || DEFEATS.rage; end = Math.max(end, 60 + (d.anim.loop ? d.anim.loop[1] : 90) + 24); }
+        }
+        this.matchEndAt = Math.min(340, end);
+      }
+      if (this.phaseT === (this.matchEndAt || 200)) this.emit('matchEnd', { result: this.result });
     }
   }
 
@@ -197,6 +232,19 @@ export class Battle {
     if (f.aura > 0 || !f.alive) return;
     if (f.state === 'locked') { f.aura = 1; if (f.lockedBy && f.lockedBy.move && f.lockedBy.move.lock) f.lockedBy.move.lock.lethal = true; return; }
     if (this.training && f.infiniteAura) { f.aura = 1; return; }
+    // golpe que gana el combate: si el atacante tiene un remate equipado, se juega la animación de remate
+    // el ganador es el atacante o, si el K.O. vino de otra fuente (estado, veneno...), cualquier rival vivo
+    const winner = attacker && attacker !== f && attacker.alive && attacker.team !== f.team ? attacker : this.fighters.find(q => q.alive && q.team !== f.team && !q.decoyOf);
+    const finId = winner && (winner.finisher === undefined || winner.finisher === null ? 'kickSpace' : winner.finisher);
+    if (winner && finId !== 'none' && !this.finisherUsed && this.phase === 'fight' && !this.opts.endless && !this.training &&
+        this.alive(f.team).length === 1 && this.wins[winner.team] + 1 >= this.roundsToWin && FINISHER_SPECS[finId]) {
+      winner.finisher = finId;
+      attacker = winner;
+      f.aura = 1;
+      this.finisherUsed = true;
+      this.startFinisher(attacker, f);
+      return;
+    }
     f.aura = 0;
     f.alive = false;
     f.koFrame = this.frame;
@@ -218,6 +266,28 @@ export class Battle {
       this.phase = 'ko'; this.phaseT = 0;
       this.slowmo = 110; this.slowScale = 0.3;
     }
+  }
+
+  startFinisher(a, d) {
+    if (d.lockedBy && d.lockedBy !== a && d.lockedBy.move && d.lockedBy.move.lock) this.releaseLock(d.lockedBy, d.lockedBy.move.lock, true);
+    d.lockedBy = null; if (d.state === 'locked') d.setState('idle');
+    if (a.state === 'locked' && a.lockedBy && a.lockedBy.move && a.lockedBy.move.lock) this.releaseLock(a.lockedBy, a.lockedBy.move.lock, true);
+    for (const q of [a, d]) {
+      if (q.move && q.move.lock) this.releaseLock(q, q.move.lock, true);
+      q.move = null; q.status.length = 0; q.vx = 0; q.vy = 0;
+      if (!q.grounded) { q.y = GROUND_Y; q.grounded = true; }
+    }
+    a.facing = Math.sign(d.x - a.x) || a.facing; d.facing = -a.facing;
+    for (const q of this.fighters) if (q !== a && q !== d && q.move && q.move.lock) this.releaseLock(q, q.move.lock, true);
+    this.projectiles.length = 0;
+    a.startMove('fin_' + a.finisher, { free: true });
+    this.startLock(a, d, FINISHER_SPECS[a.finisher](a, d, this));
+    if (a.move && a.move.lock) a.move.lock.lethal = true;
+    a.stats.finisher = a.finisher;
+    // cámara lenta durante el remate (cinemática)
+    const fr = a.move && a.move.lock ? a.move.lock.spec.frames : 80;
+    this.slowmo = fr + 10; this.slowScale = 0.55;
+    this.emit('finisher', { a, f: d, id: a.finisher, frames: fr });
   }
 
   setDefeat(f) {
@@ -243,7 +313,9 @@ export class Battle {
 
   finishRound() {
     const t0 = this.alive(0).length, t1 = this.alive(1).length;
-    const winner = t0 > 0 && t1 === 0 ? 0 : t1 > 0 && t0 === 0 ? 1 : 0;
+    // doble K.O.: gana el equipo cuyo último luchador cayó más tarde (seguía en pie cuando cayó el otro)
+    const lastKo = t => Math.max(-1, ...this.fighters.filter(f => f.team === t && !f.decoyOf).map(f => f.koFrame ?? -1));
+    const winner = t0 > 0 && t1 === 0 ? 0 : t1 > 0 && t0 === 0 ? 1 : t0 > 0 && t1 > 0 ? (this.wins[1] > this.wins[0] ? 1 : 0) : (lastKo(1) > lastKo(0) ? 1 : 0);
     this.wins[winner]++;
     for (const f of this.fighters) if (f.alive && f.team === winner) { f.setState('win'); f.move = null; }
     if (this.wins[winner] >= this.roundsToWin) {
@@ -269,8 +341,9 @@ export class Battle {
     this.timeStop = null; this.domain = null;
     // los señuelos (clones) no sobreviven al cambio de ronda
     this.fighters = this.fighters.filter(f => !f.decoyOf);
+    this.finisherUsed = false;
     for (const f of this.fighters) {
-      f.alive = true; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
+      f.alive = true; f.toSpace = false; f.pantsDrop = 0; f.visible = true; f.squashX = f.squashY = 1; f.aura = f.maxAura; f.x = f.startX; f.y = GROUND_Y; f.vx = f.vy = 0;
       f.status.length = 0; f.move = null; f.grounded = true; f.facing = f.team === 0 ? 1 : -1;
       f.combo = { hits: 0, dmg: 0, t: 0 }; f.comboTaken = 0; f.juggle = 0; f.usedOnce = {}; f.cool = {};
       f.energy = Math.min(f.energy + 25, MAX_ENERGY);
@@ -309,7 +382,7 @@ export class Battle {
           const hs = bodySurface(d.joints, a.joints[k + 'HandX'], a.joints[k + 'HandY'], dir);
           if (hs.inside) { hands = hands || {}; hands[k] = [hs.x, hs.y]; }
           const fsf = bodySurface(d.joints, a.joints[k + 'FootX'], a.joints[k + 'FootY'], dir);
-          if (fsf.inside && (a.move || !a.grounded)) { feet = feet || {}; feet[k] = [fsf.x, fsf.y]; }
+          if (fsf.inside && (a.move || !a.grounded) && !(a.move && a.move.lock && a.move.lock.spec.feet)) { feet = feet || {}; feet[k] = [fsf.x, fsf.y]; }
         }
       }
       if (hands || feet) a.resolveWith(hands || {}, feet || {});
@@ -492,6 +565,7 @@ export class Battle {
 
   onDodge(d, a, hit, src) {
     d.stats.dodges++;
+    d.lastDodge = this.frame;
     this.emit('dodge', { f: d, a });
     if (d.state === 'attack' && d.move && d.move.def.on && d.move.def.on.dodge) d.move.def.on.dodge(d, this, d.move, a, src);
   }
@@ -716,7 +790,8 @@ export class Battle {
     a.stats.hits++;
     d.flash = 4; d.squashX = 0.9; d.squashY = 1.08;
     this.hitstop = Math.max(this.hitstop, h.hitstop ?? 3);
-    this.emit('hit', { a, f: d, x: d.x, y: d.y - 100 * d.scale, dmg, strength: h.spark || (dmg > 60 ? 'heavy' : 'light'), combo: a.combo.hits, move: move.def.id, color: h.color, fx: h.fx, lock: true });
+    const cp = lockContactPoint(a, d);
+    this.emit('hit', { a, f: d, x: cp[0], y: cp[1], dmg, strength: h.spark || (dmg > 60 ? 'heavy' : 'light'), combo: a.combo.hits, move: move.def.id, color: h.color, fx: h.fx, lock: true });
     if (h.say) this.emit('callout', { f: a, text: h.say, color: h.sayColor || '#ffffff' });
     if (h.drain && !d.isImmune('humiliate')) {
       this.dealDamage(a, d, h.drain * a.dmgMult() * d.defMult(), { drain: true, noKO: true });
@@ -726,8 +801,18 @@ export class Battle {
     }
   }
 
-  releaseLock(a, L, broken) {
+  // el rival sale despedido en el mismo instante del impacto (sin esperar al final de la llave)
+  launchFromLock(a, L) {
     const d = L.target;
+    if (L.launched || !d) return;
+    this.releaseLock(a, L, false, true);
+    L.launched = true;
+    if (L.spec.end) d.vx = a.facing * L.spec.end.kb[0];
+  }
+
+  releaseLock(a, L, broken, keep = false) {
+    const d = L.target;
+    if (L.launched) { if (a.move && a.move.lock === L && !keep) a.move.lock = null; return; }
     if (d) { d.contactHands = null; d.lockReact = null; }
     if (!d || d.state !== 'locked') { if (a.move && a.move.lock === L) a.move.lock = null; return; }
     d.lockedBy = null;
@@ -739,10 +824,11 @@ export class Battle {
       d.vx = dir * end.kb[0]; d.vy = end.kb[1]; d.knockdownOnLand = end.knockdown !== false; d.wallBounce = !!end.wallBounce;
       d.juggle = JUGGLE_LIMIT - 1;
       if (end.status) d.addStatus(end.status.id, end.status.frames, {}, a);
+      if (end.space) d.toSpace = true;
       this.emit('lockEnd', { a, f: d });
     }
-    if (a.move && a.move.lock === L) a.move.lock = null;
-    if (L.lethal) { d.aura = 0; this.checkKO(d, a); }
+    if (a.move && a.move.lock === L && !keep) a.move.lock = null;
+    if (L.lethal) { const vx = d.vx; d.aura = 0; this.checkKO(d, a); if (end.space) d.vx = vx; }
   }
 
   // ---------------- proyectiles ----------------

@@ -4,10 +4,12 @@ import { Arena } from './Arena.js';
 import { FX } from './FX.js';
 import { drawFighter, drawBody, hex, shade, hsl, heartShape, mix } from './StickRenderer.js';
 import { Audio } from '../core/Audio.js';
-import { MOVES } from '../sim/moves.js';
+import { MOVES, FINISHERS } from '../sim/moves.js';
 import { POSES, MODS } from '../sim/poses.js';
 import { computeJoints, makePose, copyPose, cloneJoints } from '../sim/skeleton.js';
 import { GROUND_Y, ARENA_W, WALL_L, WALL_R } from '../sim/constants.js';
+import { AuraLayer } from './AuraFX.js';
+import { makeLook } from '../data/cosmetics.js';
 import { drawShark, drawCrocPlane, drawTungTung, drawBallerina, drawRoots, drawLirili } from './Brainrot.js';
 
 const STRENGTH_SFX = { light: 'hitLight', medium: 'hitMed', heavy: 'hitHeavy', mega: 'hitMega' };
@@ -20,7 +22,7 @@ const MOVE_SFX = {
   perfectlyBalanced: ['fingerSnap'], letHimCook: ['fire'], caughtIn4K: ['shutter'], rickroll: ['tauntHorn'], ggEz: ['tauntHorn'], lBozo: ['tauntHorn'],
   broReallyThought: ['tauntHorn'], skillIssue: ['tauntHorn'], micDrop: ['swish'], dealWithIt: ['swish'], mainCharacter: ['sparkle'], ohioMode: ['glitch'],
   lagSpike: ['glitch'], afk: ['heartbeat'], thisIsFine: ['fire'], stonks: ['coin'], bigBrain: ['energyFull'], narutoRun: ['dash'], speedrun: ['dash'],
-  snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
+  teabag: ['swish'], snapWalk: ['fingerSnap'], sixSevenSlam: ['tauntHorn'], fakeGreeting: ['swish'], handshakeHeadbutt: ['swish'], doubleSlap: ['whooshHeavy'], mewingGlare: ['mewClick'],
   sigmaTurn: ['sigmaHum'], rizzLean: ['rizzChime'], menacingPose: ['sigmaHum'], tralalero: ['bubbles'], brrPatapim: ['woodKnock'], liriliLarila: ['tick'],
   ballerinaCappuccina: ['musicBox', 'pirouette'], shoulderBrush: ['swish'], defaultDance: ['scratch'], headPalm: ['swish'], brainrotInvasion: ['ultCast', 'bubbles'], mainCharacterEnding: ['sigmaHum'],
   domainExpansion: ['domain'], finalAuraJudgment: ['ultCast'], ultimateNonchalance: ['sigmaHum'], coffinDance: ['tauntHorn'], auraOverload: ['ultCast']
@@ -29,13 +31,18 @@ const SHAKE = { light: [0, 0], medium: [70, 0.0025], heavy: [130, 0.005], mega: 
 const _ghostPose = makePose(POSES.dash);
 const _ghostJ = {};
 
+const JOINT_KEYS = ['hip', 'neck', 'sh', 'head', 'fElbow', 'fHand', 'nElbow', 'nHand', 'fKnee', 'fFoot', 'nKnee', 'nFoot'];
+
 export class BattleView {
   constructor(scene, battle, opts = {}) {
     this.scene = scene; this.b = battle; this.opts = opts;
     this.shakeMul = opts.shake ?? 1;
     this.arena = new Arena(scene, opts.arena || 'rooftop', { quality: opts.quality });
     const add = scene.add;
-    this.gRefl = add.graphics().setDepth(-50).setAlpha(this.arena.reflect);
+    // reflejo: se dibuja opaco en una textura y la transparencia se aplica a la imagen entera (sin solapes visibles)
+    this.gRefl = add.graphics().setVisible(false);
+    this.reflRT = this.arena.reflect > 0 ? add.renderTexture(0, 0, 2600, 520).setOrigin(0, 0).setDepth(-50).setAlpha(this.arena.reflect) : null;
+    this.aura = new AuraLayer(scene, 7, -6, opts.quality === 'baja');
     this.gShadow = add.graphics().setDepth(-5);
     this.gBack = add.graphics().setDepth(5);
     this.gGlow = add.graphics().setDepth(8).setBlendMode('ADD');
@@ -75,13 +82,8 @@ export class BattleView {
   lookFor(f) {
     let l = this.looks.get(f.id);
     if (l) return l;
-    const p = f.profile;
-    const rainbow = p.aura === 'rainbow';
-    l = {
-      body: hex(p.color || '#f4f4f8'), accent: hex(p.accent || '#ffd166'), aura: rainbow ? 0xffffff : hex(p.aura || '#7df9ff'),
-      accessory: p.accessory || 'none', outline: p.boss ? 0x14000a : 0x0a0a14,
-      auraFn: rainbow ? (t => hsl((t * 3) % 360, 1, 0.6)) : null
-    };
+    l = makeLook(f.profile);
+    l.auraFn = l.auraRainbow ? (t => hsl((t * 3) % 360, 1, 0.6)) : null;
     this.looks.set(f.id, l);
     return l;
   }
@@ -104,25 +106,50 @@ export class BattleView {
   drawFighters() {
     const b = this.b, gb = this.gBody, gg = this.gGlow, go = this.gOver, ga = this.gOverAdd, gs = this.gShadow, gk = this.gBack;
     gb.clear(); gg.clear(); go.clear(); ga.clear(); gs.clear(); gk.clear(); this.gRefl.clear();
+    // interpolación de render entre el paso anterior y el actual de la simulación
+    const it = this.interp ?? 1, swapped = [];
+    if (it < 0.999) for (const f of b.fighters) {
+      if (!f._pv || !f._pj || f.joints.hipX === undefined || f._pf !== f.facing || Math.abs(f._px - f.x) > 120 || Math.abs(f._py - f.y) > 120) continue;
+      const ij = f._ij || (f._ij = {}), j = f.joints, pj = f._pj;
+      for (const k in j) { const v = j[k]; ij[k] = typeof v === 'number' && pj[k] !== undefined ? pj[k] + (v - pj[k]) * it : v; }
+      swapped.push([f, j, f.x, f.y]);
+      f.joints = ij; f.x = f._px + (f.x - f._px) * it; f.y = f._py + (f.y - f._py) * it;
+    }
+    // corrección de red (online): desplazamiento visual que se desvanece en vez de un salto
+    for (const f of b.fighters) {
+      if (!f._cx && !f._cy) continue;
+      if (Math.abs(f._cx) < 0.5 && Math.abs(f._cy) < 0.5) { f._cx = 0; f._cy = 0; continue; }
+      const src = f.joints, sj = f._sj || (f._sj = {});
+      for (const k in src) sj[k] = src[k];
+      for (const k of JOINT_KEYS) { sj[k + 'X'] += f._cx; sj[k + 'Y'] += f._cy; }
+      if (sj.rootX !== undefined) { sj.rootX += f._cx; sj.rootY += f._cy; }
+      if (!swapped.some(s0 => s0[0] === f)) swapped.push([f, src, f.x, f.y]);
+      f.joints = sj; f.x += f._cx; f.y += f._cy;
+      f._cx *= 0.78; f._cy *= 0.78;
+    }
+    try { this._drawFighters(b, gb, gg, go, ga, gs, gk); }
+    finally { for (const [f, j, x, y] of swapped) { f.joints = j; f.x = x; f.y = y; } }
+  }
+  _drawFighters(b, gb, gg, go, ga, gs, gk) {
+    this.aura.begin();
     const list = [...b.fighters].sort((a, c) => (a.alive ? 1 : 0) - (c.alive ? 1 : 0) || (a.state === 'attack' ? 1 : 0) - (c.state === 'attack' ? 1 : 0));
     const multi = b.fighters.filter(f => !f.decoyOf).length > 2;
     for (const f of list) {
+      if (f.toSpace && !f.visible && !f._star) {
+        f._star = true;
+        const sx = this.cs.x + 160, sy = this.cs.y - 330 / this.cs.zoom;
+        this.fx.custom(90, (gt, gn, k, el) => { const r = 10 + Math.sin(el * 0.5) * 6; gt.fillStyle(0xffffff, k); gt.fillTriangle(sx - r * 2, sy, sx + r * 2, sy, sx, sy - 2); gt.fillTriangle(sx, sy - r * 2, sx, sy + r * 2, sx + 2, sy); gt.fillStyle(0x7df9ff, 0.4 * k); gt.fillCircle(sx, sy, r * 1.5); });
+        this.sfx('sparkle'); this.fx.text(sx, sy + 40, '✦ ' + f.name + ' ✦', { color: '#7df9ff', size: 22, hold: 1200 });
+      }
       const look = this.lookFor(f);
       if (f.decoyOf) Object.assign(look, this.lookFor(f.decoyOf));
-      // sombra
-      const hAbove = Math.max(0, GROUND_Y - f.y);
-      if (f.visible) {
-        // sombra suave en capas + sombras de contacto bajo cada pie apoyado
-        const k = Math.max(0.2, 1 - hAbove / 400), wsh = 74 * f.scale * Math.max(0.4, 1 - hAbove / 500);
-        for (let i = 0; i < 3; i++) { gs.fillStyle(0x000000, 0.12 * k); gs.fillEllipse(f.x, GROUND_Y + 4, wsh * (1.3 - i * 0.2), 16 * f.scale * (1.2 - i * 0.15)); }
-        const j = f.joints;
-        for (const fx2 of [j.nFootX, j.fFootX]) { const fy = j[fx2 === j.nFootX ? 'nFootY' : 'fFootY'], c = Math.max(0, 1 - (GROUND_Y - fy) / 40); if (c > 0) { gs.fillStyle(0x000000, 0.3 * c); gs.fillEllipse(fx2, GROUND_Y + 2, 22 * f.scale, 6 * f.scale); } }
-      }
+      // sombra suave proyectada según la luz del escenario
+      if (f.visible && f.joints.hipX !== undefined) this.aura.shadow(f, f.joints, this.arena.lightDx ?? 0.2, f.alpha ?? 1);
       if (!f.visible) continue;
       // reflejo en suelos brillantes
       if (this.arena.reflect > 0 && f.alive !== undefined) {
         const rj = mirrorJoints(f.joints, _reflJ);
-        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t });
+        drawBody(this.gRefl, null, rj, f.pose, f.scale, look, 1, { time: this.t, pantsDrop: f.pantsDrop || 0 });
       }
       // KO en 1vN: desvanecer
       let alpha = f.alpha ?? 1;
@@ -143,28 +170,15 @@ export class BattleView {
       if (f.hasStatus('auraWalk') || f.hasStatus('nahIdWin') || f.hasStatus('mainChar') || f.hasStatus('domain') || f.hasStatus('goblin')) glow += 0.6;
       if (f.state === 'attack' && f.move && f.move.def.slot === 'ult') glow += 0.8;
       if (f.boss) glow += 0.3;
-      if (f.auraPct < 0.25 && f.alive) glow *= 0.5 + Math.random() * 0.5;
-      // llamas de aura con la ultimate cargada o buffs fuertes
-      if (f.alive && (f.energy >= 100 || glow > 1.2)) {
-        const ac = look.auraFn ? look.auraFn(this.t) : look.aura;
-        const j = f.joints;
-        for (let i = 0; i < 7; i++) {
-          const ph = this.t * 0.22 + i * 1.7;
-          const bx = j.hipX + (i - 3) * 9 * f.scale, by = j.hipY + 30 * f.scale - Math.abs(i - 3) * 6;
-          const h = (70 + Math.sin(ph) * 25 + (i % 2) * 20) * f.scale;
-          const sway = Math.sin(ph * 0.7) * 10 * f.scale;
-          gg.fillStyle(ac, 0.13);
-          gg.fillTriangle(bx - 12 * f.scale, by, bx + 12 * f.scale, by, bx + sway, by - h);
-        }
-      }
-      // partículas de aura
-      if (f.alive && Math.random() < 0.12 + glow * 0.25) this.fx.motes(f.joints.hipX, f.joints.hipY - 20 * f.scale, look.auraFn ? look.auraFn(this.t) : look.aura, 1, 40 * f.scale);
+      if (f.auraPct < 0.25 && f.alive) glow *= 0.65 + Math.sin(this.t * 0.35) * 0.25;
+      // aura profesional por sprites suaves (resplandor en capas, llamas y partículas del estilo equipado)
+      this.aura.draw(f.id, f.joints, f.scale, look.auraFn ? look.auraFn(this.t) : look.aura, glow, look.auraStyle, this.t, alpha, { rainbow: look.auraRainbow });
       const flashK = f.flash > 0 ? Math.min(1, f.flash / 4) : 0;
       const shades = !!f.hasStatus('cool') || (f.state === 'attack' && f.move && f.move.def.id === 'sigmaRule');
       const lk = shades ? { ...look, shades: true } : look;
       if (f.flash > 0) lk.flashColor = f.hitFlashColor;
       drawFighter(gb, gg, f, lk, {
-        alpha, glow, flash: flashK * 0.85, time: this.t,
+        alpha, glow: 0, flash: flashK * 0.85, time: this.t,
         eyeGlow: f.move && (f.move.def.id === 'sigmaStare' || f.move.def.id === 'bombasticSideEye'),
         prop: this.propFor(f)
       });
@@ -174,6 +188,8 @@ export class BattleView {
       // marcadores
       if (multi && f.alive && !f.decoyOf) this.drawTag(f, look, go);
     }
+    this.aura.end();
+    if (this.reflRT) { const ox = -300, oy = GROUND_Y; this.reflRT.setPosition(ox, oy); this.reflRT.clear(); this.reflRT.draw(this.gRefl, -ox, -oy); }
   }
 
   drawTag(f, look, g) {
@@ -201,6 +217,7 @@ export class BattleView {
       case 'micDrop': return mf < 16 ? mic : null;
       case 'bonk': case 'tungTung': return bat;
       case 'cooked': return lock ? pan : null;
+      case 'fin_bonkGround': return bat;
       case 'thisIsFine': return mug;
       case 'coffinDance': return lock ? coffin : null;
       case 'stonks': return null;
@@ -382,7 +399,46 @@ export class BattleView {
   }
 
   // ------------------------------------------------------------
+  // Cámara cinemática del remate: planos cortados (primerísimo plano, contrapicado inclinado, plano final),
+  // ángulo holandés, zoom extremo, cámara en mano y franjas de cine. Termina restaurando la cámara normal.
+  updateCinematic(k) {
+    const C = this.cine, cs = this.cs, cam = this.cam, a = C.a, d = C.f;
+    C.t += k;
+    const u = C.t / C.dur;
+    if (u >= 1 || !a.joints || !d.joints) {
+      cam.setRotation(cam.rotation * 0.85);
+      if (Math.abs(cam.rotation) < 0.002) { cam.setRotation(0); this.cine = null; }
+      return false;
+    }
+    const mx = (a.x + d.x) / 2;
+    let tx, ty, zoom, rot, lerp = 0.12;
+    // los planos se sincronizan con el fotograma real del remate: el plano abierto siempre cubre el contacto
+    const L = a.move && a.move.lock, sp = L && L.spec;
+    let shot;
+    if (sp) { const contact = sp.cineContact ?? (sp.hits && sp.hits[0] ? sp.hits[0].f : 20); shot = L.f < contact - 7 ? 1 : L.f < contact + 25 ? 2 : 3; }
+    else shot = u < 0.22 ? 1 : u < 0.62 ? 2 : 3;
+    shot = Math.max(shot, C.shot || 1); C.shot = shot;
+    if (shot === 2) { // plano del contacto: ambos cuerpos enteros, ligeramente contrapicado
+      tx = mx; ty = GROUND_Y - 110; zoom = 1.55; rot = 0.06 * a.facing; lerp = C.cut === 2 ? 0.1 : 1; C.cut = 2;
+    } else if (shot === 1) { // plano 1: primerísimo plano de la cara del ganador, inclinado
+      tx = a.joints.headX + a.facing * 30; ty = a.joints.headY + 10; zoom = 2.7; rot = -0.16 * a.facing; lerp = C.cut === 1 ? 0.12 : 1; C.cut = 1;
+    } else { // plano 3: abierto sobre la víctima con zoom de impacto
+      tx = d.visible ? d.x : mx; ty = d.visible ? Math.min(GROUND_Y - 90, d.y - 100) : GROUND_Y - 300; zoom = 2.1 - (u - 0.62) * 0.8; rot = -0.07 * a.facing; lerp = C.cut === 3 ? 0.14 : 1; C.cut = 3;
+    }
+    if (lerp === 1) { this.fx.flash(tx, ty, 0xffffff, 3, 120); this.sfx('whoosh', { pitch: 0.7, gain: 0.6 }); }
+    // cámara en mano
+    tx += Math.sin(C.t * 0.31) * 3 + Math.sin(C.t * 0.13) * 5; ty += Math.cos(C.t * 0.27) * 3;
+    cs.x += (tx - cs.x) * Math.min(1, lerp * k);
+    cs.y += (ty - cs.y) * Math.min(1, lerp * k);
+    cs.zoom += (zoom - cs.zoom) * Math.min(1, lerp * k);
+    cam.setRotation(cam.rotation + (rot - cam.rotation) * Math.min(1, (lerp === 1 ? 1 : 0.08) * k));
+    cam.setZoom(cs.zoom);
+    cam.centerOn(cs.x, cs.y);
+    return true;
+  }
+
   updateCamera(k) {
+    if (this.cine && this.updateCinematic(k)) return;
     const b = this.b, cs = this.cs, cam = this.cam;
     const fs = b.fighters.filter(f => (f.alive || (b.lastKO && b.lastKO.f === f)) && f.visible && !f.decoyOf && f.y > GROUND_Y - 800);
     let minX = 1e9, maxX = -1e9, minY = GROUND_Y;
@@ -490,6 +546,15 @@ export class BattleView {
         fx.text(f.x, f.y - (e.small ? 200 : 230) * f.scale, e.text, { color: e.color || '#fff', size: e.small ? 22 : 34, hold: e.small ? 350 : 700 });
         break;
       }
+      case 'auraRecover': {
+        // humillación de aura: el humillador recupera aura (nunca daña); número verde y destellos de su color
+        const f = e.f, col = this.lookFor(f).aura;
+        if (e.amount > 0) fx.text(f.x + f.facing * 20, f.y - 175 * f.scale, '+' + e.amount + ' AURA', { color: '#7bd389', size: 22, hold: 260, rise: 40 });
+        if (e.text) { fx.text(f.x, f.y - 240 * f.scale, e.text, { color: '#7bd389', size: 30, hold: 650 }); this.sfx('rizzChime', { gain: 0.6 }); this.arena.react('cheer', 0.5); }
+        fx.motes(f.joints.headX, f.joints.headY, col, 4, 26);
+        break;
+      }
+      case 'humCancel': fx.dust(e.f.x, e.f.y, 4); break;
       case 'humiliate': {
         const f = e.f;
         fx.text(f.x, f.y - 250 * f.scale, e.text, { color: e.color || '#ff66cc', size: 40, hold: 900 });
@@ -586,6 +651,17 @@ export class BattleView {
         this.dimTarget = 0.35;
         break;
       }
+      case 'finisher': {
+        const F = FINISHERS[e.id];
+        this.scene.events.emit('ultBanner', { f: e.a, def: { name: F ? F.name : 'REMATE', sub: 'REMATE DE K.O. · ' + e.a.name, color: '#ffd166', slim: true } });
+        this.sfx('ultCast'); this.duck(2.5, 0.25); this.dimTarget = 0.35; S.time.delayedCall(1500, () => { this.dimTarget = 0; });
+        // modo película: cámara cinemática + franjas + grano (frames del remate en cámara lenta ≈ x1.8)
+        this.cine = { a: e.a, f: e.f, t: 0, dur: (e.frames || 80) * 1.8 + 20, cut: 0 };
+        this.cs.focus = null;
+        S.events.emit('letterbox', Math.round(this.cine.dur));
+        S.events.emit('filmMode', Math.round(this.cine.dur));
+        break;
+      }
       case 'domainEnd': this.dimTarget = 0; this.domainOwner = null; break;
       case 'blind': this.scene.events.emit('flash', 0xffffff, 400); break;
       case 'fx': this.namedFx(e); break;
@@ -612,7 +688,7 @@ export class BattleView {
     }
     if (d.slot === 'hidden') { this.sfx('whoosh'); return; }
     this.sfx('whoosh', { pitch: 1.2 });
-    if (d.slot !== 'ult') this.fx.text(f.x, f.y - 215 * f.scale, d.name.toUpperCase(), { color: d.color || '#ffffff', size: 26, hold: 420, rise: 30 });
+    if (d.slot !== 'ult' && d.slot !== 'finisher') this.fx.text(f.x, f.y - 215 * f.scale, d.name.toUpperCase(), { color: d.color || '#ffffff', size: 26, hold: 420, rise: 30 });
     const sig = MOVE_SFX[d.id] || [d.slot === 'ult' ? 'ultCast' : 'cast'];
     for (const n of sig) this.sfxAt(n, f.x);
     if (d.id === 'sixSeven' || d.id === 'sixSevenBarrage') this.sfx('count');
@@ -623,6 +699,8 @@ export class BattleView {
     switch (e.fx) {
       case 'slap': fx.text(e.x, e.y - 30, '¡ZAS!', { color: '#ffffff', size: 48 }); this.sfx('slap'); this.shake('heavy'); fx.emit('star', e.x, e.y, 10, 0xffffff); break;
       case 'bonk': fx.text(e.x, e.y - 50, 'BONK', { color: '#d6a46b', size: 40 }); this.sfx('bonk'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 8, 0xffe066); break;
+      case 'boing': fx.text(e.x, e.y - 40, 'BOING', { color: '#ff66cc', size: 32, angle: (Math.random() - 0.5) * 24 }); this.sfx('pop', { pitch: 0.6 }); this.sfx('slap', { pitch: 1.6, gain: 0.5 }); fx.emit('heart', e.x, e.y, 3, 0xff66cc); break;
+      case 'spaceKick': fx.text(e.x, e.y - 230, '¡AL ESPACIO!', { color: '#7df9ff', size: 54 }); this.sfx('hitMega'); this.sfx('vineBoom'); this.shake('heavy'); fx.starburst(e.x, e.y, 0x7df9ff, 1.2, -Math.PI / 2); this.scene.time.delayedCall(700, () => this.sfx('whooshHeavy', { pitch: 1.6 })); break;
       case 'flick': fx.text(e.x, e.y - 60, 'TOC', { color: '#8be9fd', size: 34 }); this.sfx('fingerSnap'); fx.emit('star', e.f.joints.headX, e.f.joints.headY - 10, 6, 0xffe066); break;
       case 'headbutt': fx.text(e.x, e.y - 60, '¡CRACK!', { color: '#c084fc', size: 44 }); this.sfx('woodKnock', { pitch: 0.6 }); this.shake('heavy'); fx.emit('star', e.f.joints.headX, e.f.joints.headY, 12, 0xffffff); break;
       case 'chomp': fx.text(e.x, e.y - 60, 'ÑAM', { color: '#4cc9f0', size: 44 }); this.sfx('chomp'); this.sfx('bubbles'); this.shake('heavy'); break;
@@ -647,6 +725,16 @@ export class BattleView {
     const f = e.f;
     const look = f ? this.lookFor(f) : null;
     switch (e.name) {
+      case 'pat': this.sfxAt('pat', e.x, { pitch: e.soft ? 0.85 : 1.1 }); fx.motes(e.x, e.y, 0xffd166, 2, 8); if (!e.soft) fx.emit('heart', e.x, e.y - 14, 1, 0xff79c6); if (e.victim) e.victim.squashY = 0.94; break;
+      case 'dust': this.sfxAt('swish', e.x, { pitch: 1.4, gain: 0.6 }); fx.dust(e.x, e.y, 6, 0xd8d0c0, f.facing, 0.6); break;
+      case 'humMiss': fx.text(f.x, f.y - 210 * f.scale, '¿EH?', { color: '#c9c3e6', size: 24, hold: 300 }); this.sfx('deny'); break;
+      case 'zzz': fx.text(f.joints.headX + 20, f.joints.headY - 20, 'Z', { color: '#c084fc', size: 26, hold: 200, rise: 50 }); this.sfx('bubbles', { gain: 0.4 }); break;
+      case 'tick': this.sfxAt('tick', e.x); this.scene.time.delayedCall(260, () => this.sfxAt('tick', e.x, { pitch: 0.9 })); fx.ring(e.x, e.y, 0xffe066, 0.3, 300); break;
+      case 'clap': this.sfxAt('clap1', e.x, { pitch: 0.95 + Math.random() * 0.1 }); fx.sparks(e.x, e.y, 4, 0xffffff, 3); break;
+      case 'thumb': this.sfx('sparkle'); fx.emit('star', e.x, e.y, 3, 0x7bd389); fx.flash(e.x, e.y, 0x7bd389, 0.6, 200); break;
+      case 'stretch': this.sfx('swish', { pitch: 0.6 }); break;
+      case 'laces': this.sfxAt('zip', e.x); break;
+      case 'selfie': this.sfxAt('shutter', e.x); fx.flash(e.x, e.y, 0xffffff, 2.2, 260); break;
       case 'sixseven': fx.motes(e.alt ? f.joints.fHandX : f.joints.nHandX, e.alt ? f.joints.fHandY : f.joints.nHandY, 0xffd166, 2, 10); break;
       case 'snapBeat': {
         const hx = e.i % 2 ? f.joints.nHandX : f.joints.fHandX, hy = e.i % 2 ? f.joints.nHandY : f.joints.fHandY;
@@ -675,6 +763,9 @@ export class BattleView {
         break;
       }
       case 'brainrot': this.brainrotStep(e); break;
+      case 'tooSlow': fx.text(f.joints.nHandX, f.joints.nHandY - 30, '😏', { size: 34, hold: 300 }); this.sfx('swish', { pitch: 1.4 }); this.sfx('whoosh', { pitch: 1.5 }); break;
+      case 'pantsDown': fx.text(e.f.x, e.f.y - 230, '¡PANTALONES ABAJO!', { color: '#ff66cc', size: 46, hold: 900 }); this.sfx('scratch'); this.sfx('tauntHorn'); fx.emit('heart', e.f.x, e.f.y - 70, 8, 0xff3b6b); this.focus(e.f.x, e.f.y - 70, 1.7, 70, 0.12); break;
+      case 'laughPoint': fx.text(f.x + f.facing * 30, f.joints.headY - 30, ['JAJAJA', 'XD', '💀', 'LOL'][Math.floor(Math.random() * 4)], { color: '#ffd166', size: 26, hold: 260, angle: (Math.random() - 0.5) * 20 }); break;
       case 'jawline': fx.custom(40, (gt, gn, k) => { gt.lineStyle(4, 0x9be7ff, k); const j = f.joints, d = f.facing; gt.lineBetween(j.headX - d * 8, j.headY + 8, j.headX + d * 5, j.headY + 15); gt.lineBetween(j.headX + d * 5, j.headY + 15, j.headX + d * 13, j.headY + 9); }); fx.emit('star', f.joints.headX + f.facing * 6, f.joints.headY + 12, e.big ? 10 : 5, 0x9be7ff); this.sfx('ice'); break;
       case 'stare': {
         const j = f.joints;
@@ -759,6 +850,7 @@ export class BattleView {
 
   onKO(e) {
     const f = e.f, fx = this.fx;
+    if (this.cine) { this.cine.t = Math.max(this.cine.t, this.cine.dur * 0.62); }
     const look = e.attacker ? this.lookFor(e.attacker) : { aura: 0xffffff };
     fx.ring(f.x, f.y - 90, 0xffffff, 4, 700);
     fx.ring(f.x, f.y - 90, look.aura, 6, 1000);
@@ -788,6 +880,7 @@ export class BattleView {
   destroy() {
     this.arena.destroy();
     this.fx.destroy();
+    this.aura.destroy(); if (this.reflRT) this.reflRT.destroy();
     for (const g of [this.gRefl, this.gShadow, this.gBack, this.gGlow, this.gBody, this.gProj, this.gProjAdd, this.gOver, this.gOverAdd, this.gDebug, this.dim]) g.destroy();
     if (this.cam.postFX) { try { this.cam.postFX.clear(); } catch (e) { /* nada */ } }
   }

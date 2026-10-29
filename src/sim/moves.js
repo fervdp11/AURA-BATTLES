@@ -1,6 +1,8 @@
 // Definición de todos los movimientos. Cada técnica tiene animación propia, reglas de impacto
 // y formas de ser esquivada o contrarrestada. Frames a 60 Hz. Daño sobre 1000 de aura.
+import { dsin } from './dmath.js';
 import { GROUND_Y, WALL_L, WALL_R } from './constants.js';
+import { humMoveDefs, HUM_IDS } from './humiliations.js';
 
 export const MOVES = {};
 
@@ -29,7 +31,7 @@ const total = d => d.startup + d.active + d.recovery;
 const shakePoint = (a, t, fr, shake) => {
   const ja = a.joints, jt = t.joints;
   const x = (ja.shX + jt.shX) / 2;
-  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? Math.sin(fr * 0.75) * 7 * a.scale : 0);
+  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? dsin(fr * 0.75) * 7 * a.scale : 0);
   return { x, y };
 };
 const ramp = (fr, a, b) => Math.max(0, Math.min(1, (fr - a + 1) / 4, (b - fr + 1) / 4));
@@ -47,6 +49,7 @@ function contactPointOf(t, at, facing) {
   if (at === 'gut') return [j.neckX * 0.3 + j.hipX * 0.7 - facing * 11 * s, j.neckY * 0.3 + j.hipY * 0.7];
   if (at === 'top') return [j.headX, j.headY - j.headR];
   if (at === 'shoulder') return [j.shX - facing * 8 * s, j.shY];
+  if (at === 'hip') return [j.hipX - facing * 12 * s, j.hipY + 4 * s];
   return null;
 }
 // apretón de manos: ambos sacuden la mano cercana en el mismo punto hasta 'release'
@@ -154,23 +157,37 @@ def('sixSeven', {
 def('fakeHandshake', {
   name: 'Fake Handshake', cost: 15, cd: 60, startup: 12, active: 6, recovery: 30, color: '#9be7ff',
   anim: [[0, 'guard'], [10, 'offer', 'out'], [18, 'offer'], [48, 'guard']],
-  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 70, 120) },
+  hit: { dmg: 0, grab: true, box: frontBox(20, -150, 80, 120) },
   on: {
     grab(f, b, m, d) {
+      // le ofreces la mano; el rival alarga la suya para dártela... y justo antes del contacto la quitas: ¡tortazo!
+      const meet = (a, t) => { const j = a.joints; return { x: j.shX + a.facing * 44 * a.scale, y: j.shY + 20 * a.scale }; };
       b.startLock(f, d, {
-        frames: 60, off: [80, 0], tpose: t => t < 40 ? 'offer' : 'held',
-        anim: [[0, 'offer'], [30, 'offer'], [38, 'slapW', 'out'], [44, 'slap', 'snap'], [52, 'slap'], [60, 'guard', 'inOut']],
-        // los dos se dan la mano de verdad; al soltarla, la misma mano vuelve con un tortazo a la mejilla
-        ...handshake(36, 30, (a, t, fr) => { const h = faceHit(a, t, 'n', 43, 52, fr); return h ? { n: h } : null; }),
-        hits: [{ f: 44, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12 }],
+        frames: 68, off: [92, 0], tpose: t => (t < 24 ? 'reachHand' : t < 44 ? 'graspAir' : 'held'),
+        anim: [[0, 'offer'], [22, 'offer'], [26, 'tooSlow', 'snap'], [38, 'tooSlow'], [44, 'slapW', 'out'], [50, 'slap', 'snap'], [58, 'slap'], [68, 'guard', 'inOut']],
+        // la mano del atacante se queda quieta ofreciendo hasta el último momento
+        hands: (a, t, fr) => {
+          if (fr <= 23) { const p = meet(a); return { n: { x: p.x, y: p.y, w: 1 } }; }
+          const h = faceHit(a, t, 'n', 49, 58, fr); return h ? { n: h } : null;
+        },
+        // la del rival se acerca hasta casi tocarla y, cuando la quitas, aprieta el aire
+        thands: (a, t, fr) => {
+          if (fr > 44) return null;
+          const p = meet(a), k = Math.min(1, fr / 24);
+          const jt = t.joints, sx = jt.shX - a.facing * 20 * t.scale, sy = jt.shY + 24 * t.scale;
+          const gap = fr <= 23 ? 30 * a.scale * (1 - k) + 22 * a.scale : -6 * a.scale; // se queda a un palmo... y luego aprieta el vacío
+          return { n: { x: sx + (p.x - a.facing * gap - sx) * k, y: sy + (p.y - sy) * k, w: 1 } };
+        },
+        frame: (ff, bb, mm, t, tt) => { if (t === 24) { bb.emit('callout', { f: ff, text: '¡DEMASIADO LENTO!', color: '#9be7ff' }); bb.emit('fx', { name: 'tooSlow', f: ff, d: tt }); } },
+        hits: [{ f: 50, dmg: 110, spark: 'heavy', fx: 'slap', say: '¡ZAS!', last: true, hitstop: 12, react: 'slapped' }],
         end: { kb: [10, -7], knockdown: true }
       });
       say(b, f, 'FAKE HANDSHAKE', '#9be7ff');
     },
     end(f, b, m) { if (!m.hit) { b.dealDamage(null, f, 15); say(b, f, 'LEFT HANGING', '#888888'); } }
   },
-  desc: 'Ofreces la mano... y le das un tortazo cómico. Agarre: atraviesa el bloqueo.', tip: 'Salta, haz dash o golpéalo mientras ofrece la mano. Si falla, queda colgado y pierde aura.',
-  ai: { role: 'grab', range: [0, 95] }
+  desc: 'Ofreces la mano; cuando el rival va a dártela, la quitas en el último instante ("¡demasiado lento!") y le cruzas la cara. Agarre: atraviesa el bloqueo.', tip: 'Salta, haz dash o golpéalo mientras ofrece la mano. Si falla, queda colgado y pierde aura.',
+  ai: { role: 'grab', range: [0, 105] }
 });
 
 def('mewing', {
@@ -338,7 +355,8 @@ def('noReaction', {
       else { if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true); a.move = null; a.addStatus('dizzy', 24, {}, d); }
       b.drain(d, a, 55, 'NO REACTION', '#dddddd');
       d.flash = 4;
-      d.move.f = 51;
+      // el golpe pudo terminar el combate y lanzar un remate: solo se avanza si sigue en No Reaction
+      if (d.move && d.move.def.id === 'noReaction') d.move.f = 51;
       return true;
     }
   },
@@ -1321,11 +1339,12 @@ def('finalAuraJudgment', {
         b.spawnProjectile(f, { kind: 'pillar', x: d.x, y: GROUND_Y - 400, absVx: true, vx: 0, w: 110, h: 800, life: 14, delay: 36, track: d, trackFor: 24, pierce: true, clash: false,
           hit: { dmg: 0, unblockable: true, ultimate: true, grab: false, stun: 1, kb: [0, 0] }, src: 'finalAuraJudgment',
           onHit: (bb, p, dd) => {
-            if (!f.move || f.move.def.id !== 'finalAuraJudgment' || f.move.lock) return;
+            const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
+          if (!f.move || f.move.def.id !== 'finalAuraJudgment' || f.move.lock) return;
             const hits = [];
             for (let i = 0; i < 5; i++) hits.push({ f: 14 + i * 14, dmg: 30, spark: 'heavy', fx: 'lightning' });
             hits.push({ f: 100, dmg: 150, spark: 'mega', fx: 'judgment', say: 'JUZGADO', sayColor: '#fff6a0', last: true, hitstop: 22 });
-            bb.startLock(f, dd, { frames: 112, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: 'airHurt', cine: true, anim: [[0, 'judgment'], [112, 'judgment']], hits, end: { kb: [3, -12], knockdown: true } });
+            bb.startLock(f, dd, { frames: 112, off: [(t, a, d) => (d.x - a.x) * a.facing / a.scale, 0], tpose: 'airHurt', cine: true, anim: [[0, 'judgment'], [112, 'judgment']], hits, end: { kb: [3, -12], knockdown: true } });
           } });
       }
     }
@@ -1353,7 +1372,7 @@ def('coffinDance', {
       b.startLock(f, d, {
         frames: 140, off: [t => 70, t => (t > 20 && t < 120 ? -70 : 0)], tpose: 'lying', cine: true,
         anim: [[0, 'coffin'], [140, 'coffin']], mods: [[0, 140, 'dance']],
-        frame: (ff, bb, mm, t) => { if (t === 2) bb.emit('fx', { name: 'coffin', f: ff, d }); },
+        frame: (ff, bb, mm, t, tt) => { if (t === 2) bb.emit('fx', { name: 'coffin', f: ff, d: tt }); },
         hits: [{ f: 40, dmg: 40, spark: 'light' }, { f: 80, dmg: 60, spark: 'medium' }, { f: 125, dmg: exec ? 999 : 150, spark: 'mega', fx: 'coffinDrop', say: exec ? 'GG' : '⚰️', last: true, hitstop: 20 }],
         end: { kb: [6, -5], knockdown: true }
       });
@@ -1690,10 +1709,11 @@ def('brainrotInvasion', {
       b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 14, w: 140, h: 80, life: 90, maxHits: 1, scale: 1.4,
         hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'brainrotInvasion',
         onHit: (bb, p, dd) => {
+          const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
           if (!f.move || f.move.def.id !== 'brainrotInvasion' || f.move.lock) return;
           p.dead = true;
           bb.startLock(f, dd, {
-            frames: 150, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
+            frames: 150, off: [(t, a, d) => (d.x - a.x) * a.facing / a.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
             anim: [[0, 'point'], [40, 'conduct'], [150, 'conduct']], mods: [[40, 150, 'conduct']],
             frame: (ff, b2, mm, t, tt) => {
               if (t === 2) b2.emit('fx', { name: 'brainrot', step: 'shark', f: tt, a: ff });
@@ -1722,11 +1742,12 @@ def('mainCharacterEnding', {
       b.spawnProjectile(f, { kind: 'none', x: d.x, y: GROUND_Y - 100, absVx: true, vx: 0, w: 120, h: 200, life: 10, delay: 26, track: d, trackFor: 20, pierce: true, clash: false,
         hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'mainCharacterEnding',
         onHit: (bb, p, dd) => {
+          const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
           if (!f.move || f.move.def.id !== 'mainCharacterEnding' || f.move.lock) return;
           f.addStatus('cool', 300, {}, f);
           bb.startLock(f, dd, {
             // el protagonista se aleja sin mirar mientras todo explota a su espalda
-            frames: 130, off: [t => Math.max(80, (dd.x - f.x) * f.facing / f.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
+            frames: 130, off: [(t, a, d) => Math.max(80, (d.x - a.x) * a.facing / a.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
             anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [130, 'walkAway']],
             frame: (ff, b2, mm, t, tt) => {
               if (t > 14 && t < 100) ff.x -= ff.facing * 2.2;
@@ -1743,6 +1764,91 @@ def('mainCharacterEnding', {
   ai: { role: 'ult', range: [0, 2000] }
 });
 
+
+// ---------- agarre de humillación ----------
+def('teabag', {
+  name: 'Teabag Supremo', cost: 20, cd: 150, startup: 10, active: 6, recovery: 26, color: '#ff66cc',
+  anim: [[0, 'guard'], [8, 'dapW', 'out'], [12, 'teabagHold'], [40, 'guard']],
+  hit: { dmg: 0, grab: true, box: frontBox(20, -160, 70, 130) },
+  on: {
+    grab(f, b, m, d) {
+      // le agarra la cabeza, se la baja hasta la cintura y le da tres caderazos en la cara
+      b.startLock(f, d, {
+        frames: 64, off: [t => (t < 8 ? 70 : 82), 0], tpose: t => (t < 6 ? 'held' : 'headPulled'),
+        anim: [[0, 'teabagHold'], [64, 'teabagHold']], mods: [[10, 52, 'thrust']],
+        hands: (a, t, fr) => { const j = t.joints; return fr < 56 ? { n: { x: j.headX, y: j.headY - j.headR * 0.8, w: Math.min(1, fr / 4) } } : null; },
+        frame: (ff, bb, mm, t, tt) => { if (t === 12) bb.emit('callout', { f: ff, text: 'TEABAG', color: '#ff66cc' }); },
+        hits: [{ f: 13, dmg: 20, drain: 15, fx: 'boing', spark: 'light', react: 'headPulled' }, { f: 25, dmg: 20, drain: 15, fx: 'boing', spark: 'light', react: 'headPulled' }, { f: 38, dmg: 25, drain: 20, fx: 'boing', spark: 'medium', react: 'headPulled', say: 'HUMILLADO', sayColor: '#ff66cc' },
+          { f: 58, dmg: 40, spark: 'heavy', fx: 'slap', last: true, react: 'hurtGut' }],
+        end: { kb: [9, -5], knockdown: true }
+      });
+    }
+  },
+  desc: 'Le agarras la cabeza, se la bajas hasta tu cintura y le das tres caderazos en toda la cara. Agarre de humillación: atraviesa el bloqueo.', tip: 'Salta o castígalo mientras alarga el brazo.',
+  ai: { role: 'grab', range: [0, 95] }
+});
+
+// ---------- REMATES DE K.O. (se activan con el golpe que gana el combate; se equipan en Personaje) ----------
+const FIN = { slot: 'finisher', cost: 0, cd: 0, startup: 1, active: 2, recovery: 10, cine: false, ai: { role: 'finisher', range: [0, 0] } };
+export const FINISHERS = {
+  kickSpace: { name: 'Patada Espacial', price: 0, desc: 'Una patada tan fuerte que lo mandas al espacio exterior. Brilla como una estrella.' },
+  pantsDown: { name: 'Bajada de Pantalones', price: 0, desc: 'Le bajas los pantalones delante de todos, lo señalas y te ríes. Calzoncillos de corazones incluidos.' },
+  bonkGround: { name: 'Bonk Sello', price: 400, desc: 'Tres batazos que lo dejan aplastado como un sello.' },
+  explosionWalk: { name: 'Explosión de Espaldas', price: 700, desc: 'Te das la vuelta, te alejas y explota a tu espalda. Ni lo miras.' }
+};
+export const FINISHER_SPECS = {
+  kickSpace: (a, d) => ({
+    // carga, patada vertical: el empeine sube hasta la barbilla (contacto IK) y en ese mismo instante sale
+    // disparado en vertical; el atacante mantiene la patada arriba y luego mira al cielo con la mano en la frente
+    frames: 64, off: [44, 0], launchAt: 16, tpose: t => (t < 4 ? 'scared' : t < 15 ? 'dazedUp' : 'launchUp'), cine: true,
+    anim: [[0, 'guard'], [9, 'spaceKickW', 'anticip'], [15, 'spaceKick', 'snap'], [28, 'spaceKick'], [36, 'spaceKickHold', 'inOut'], [44, 'spaceKickDown', 'inOut'], [52, 'spaceLookUp', 'inOut'], [64, 'spaceLookUp']],
+    feet: (aa, t, fr) => {
+      if (fr < 11 || fr > 16) return null;
+      const j = t.joints, w = Math.min(1, (fr - 10) / 5);
+      // barbilla del rival (algo hacia su cara) y el tobillo justo debajo: la punta del pie toca la barbilla
+      return { f: { x: j.headX + t.facing * j.headR * 0.3 - aa.facing * 3 * aa.scale, y: j.headY + j.headR * 0.95 + 11 * aa.scale, w } };
+    },
+    hits: [{ f: 15, dmg: 0, spark: 'heavy', fx: 'spaceKick', hitstop: 14, react: 'launchUp', reactFrames: 60 }],
+    end: { kb: [0.4, -34], knockdown: true, space: true }
+  }),
+  pantsDown: (a, d) => ({
+    // agarra la cinturilla, tira hacia abajo (la prenda baja por las piernas con la mano) y se ríe señalando
+    frames: 112, off: [t => (t < 18 ? 58 : 74), 0], tpose: t => (t < 16 ? 'held' : 'pantsShock'), cine: true,
+    anim: [[0, 'guard'], [10, 'pantsGrab', 'out'], [16, 'pantsGrab'], [26, 'crouch', 'inOut'], [36, 'pointLaugh', 'out'], [104, 'pointLaugh']], mods: [[36, 104, 'laugh']],
+    hands: (aa, t, fr) => {
+      if (fr < 8 || fr > 27) return null;
+      const j = t.joints, s = t.scale, w = Math.min(1, (fr - 7) / 3) * (fr > 24 ? Math.max(0, 1 - (fr - 24) / 3) : 1);
+      const drop = t.pantsDrop || 0, top = Math.min(1.82, 0.15 + drop * 1.7);
+      const lp = (k, u) => (u <= 1 ? [j.hipX + (j[k + 'KneeX'] - j.hipX) * u, j.hipY + (j[k + 'KneeY'] - j.hipY) * u] : [j[k + 'KneeX'] + (j[k + 'FootX'] - j[k + 'KneeX']) * (u - 1), j[k + 'KneeY'] + (j[k + 'FootY'] - j[k + 'KneeY']) * (u - 1)]);
+      const [nx, ny] = drop > 0 ? lp('n', top) : [j.hipX, j.hipY - 4 * s], [fx, fy] = drop > 0 ? lp('f', top) : [j.hipX, j.hipY - 2 * s];
+      return { n: { x: nx - aa.facing * 6 * s, y: ny, w }, f: { x: fx - aa.facing * 2 * s, y: fy + 2 * s, w } };
+    },
+    frame: (ff, bb, mm, t, tt) => {
+      if (t >= 16 && t <= 25) tt.pantsDrop = Math.min(1, (t - 15) / 9);
+      if (t === 18) bb.emit('fx', { name: 'pantsDown', f: tt, a: ff });
+      if (t > 36 && t % 18 === 0) bb.emit('fx', { name: 'laughPoint', f: ff });
+    },
+    hits: [{ f: 18, dmg: 0, drain: 0, fx: 'boing', react: 'pantsShock', reactFrames: 90 }, { f: 100, dmg: 0, spark: 'light', last: true, react: 'pantsShock' }],
+    end: { kb: [1, -3], knockdown: true }
+  }),
+  bonkGround: (a, d) => ({
+    frames: 92, off: [64, 0], tpose: 'held', cine: true,
+    anim: [[0, 'bonkW'], [16, 'bonkW'], [22, 'bonk', 'snap'], [34, 'bonkW'], [42, 'bonk', 'snap'], [54, 'bonkW'], [62, 'bonk', 'snap'], [92, 'bonk']],
+    hands: (aa, t, fr) => { for (const h of [22, 42, 62]) if (fr >= h - 1 && fr < h + 8) { const j = t.joints; return { n: { x: j.headX, y: j.headY - j.headR, w: 1 } }; } return null; },
+    frame: (ff, bb, mm, t, tt) => { const n = (t >= 22) + (t >= 42) + (t >= 62); tt.squashY = 1 - n * 0.2; tt.squashX = 1 + n * 0.18; },
+    hits: [{ f: 22, dmg: 0, fx: 'tung', spark: 'heavy', react: 'flattened', reactFrames: 30 }, { f: 42, dmg: 0, fx: 'tung', spark: 'heavy', react: 'flattened', reactFrames: 30 }, { f: 62, dmg: 0, fx: 'tung', spark: 'mega', react: 'flattened', reactFrames: 40, say: 'APLASTADO', sayColor: '#c68642', last: true, hitstop: 14 }],
+    end: { kb: [0, -2], knockdown: true }
+  }),
+  explosionWalk: (a, d) => ({
+    frames: 100, off: [t => 80 + Math.max(0, t - 14) * 2.2, 0], tpose: t => (t < 70 ? 'scared' : 'airHurt'), cine: true,
+    anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [100, 'walkAway']],
+    frame: (ff, bb, mm, t, tt) => { if (t === 14) ff.addStatus('cool', 240, {}, ff); if (t === 70) bb.emit('fx', { name: 'explosion', x: tt.x, y: tt.y - 80, big: true }); },
+    hits: [{ f: 70, dmg: 0, spark: 'mega', fx: 'boom', say: 'NI LO MIRA', sayColor: '#ffe066', last: true, hitstop: 16 }],
+    end: { kb: [8, -13], knockdown: true }
+  })
+};
+for (const id in FINISHERS) def('fin_' + id, { ...FIN, name: FINISHERS[id].name, color: '#ffd166', anim: [[0, 'guard']], desc: FINISHERS[id].desc, tip: '' });
+
 // Contactos automáticos: los movimientos de bofetada/palmada llevan la mano a la cara (o al pecho) al conectar.
 for (const m of Object.values(MOVES)) {
   if (m.contacts || !m.anim) continue;
@@ -1753,9 +1859,13 @@ for (const m of Object.values(MOVES)) {
   else if (has('clap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
 }
 
+// Humillaciones de Aura (recuperan aura propia, nunca dañan) y el despertar con rabia
+for (const [id, d] of Object.entries(humMoveDefs())) def(id, d);
+
 export const BASIC_IDS = Object.values(MOVES).filter(m => m.slot === 'basic').map(m => m.id);
 export const SPECIAL_IDS = Object.values(MOVES).filter(m => m.slot === 'special').map(m => m.id);
 export const ULT_IDS = Object.values(MOVES).filter(m => m.slot === 'ult').map(m => m.id);
+export const AURA_IDS = HUM_IDS.slice();
 
 for (const m of Object.values(MOVES)) {
   m.total = total(m);

@@ -3,12 +3,13 @@ import { Save } from '../core/Save.js';
 import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, StickPreview, go, fadeIn, keyHints, toast } from '../ui/UI.js';
-import { MOVES, SPECIAL_IDS, ULT_IDS } from '../sim/moves.js';
-import { BODY_COLORS, AURA_COLORS, ACCESSORIES, CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS, AURA_IDS, FINISHERS } from '../sim/moves.js';
+import { CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
 import { CELEBRATIONS } from '../sim/celebrations.js';
+import { RARITY } from '../data/cosmetics.js';
 import { playerProfile } from '../core/Match.js';
 
-const SLOTS = [['special', 'ESPECIAL (C)'], ['specialF', '→ + ESPECIAL'], ['specialD', '↓ + ESPECIAL'], ['skill1', 'HABILIDAD 1 (A)'], ['skill2', 'HABILIDAD 2 (S)'], ['ult', 'ULTIMATE (D)']];
+const SLOTS = [['special', 'ESPECIAL (C)'], ['specialF', '→ + ESPECIAL'], ['specialD', '↓ + ESPECIAL'], ['skill1', 'HABILIDAD 1 (A)'], ['skill2', 'HABILIDAD 2 (S)'], ['ult', 'ULTIMATE (D)'], ['hum1', 'HUMILLACIÓN 1'], ['hum2', 'HUMILLACIÓN 2'], ['hum3', 'HUMILLACIÓN 3']];
 
 export class CharacterScene extends Phaser.Scene {
   constructor() { super('Character'); }
@@ -43,39 +44,16 @@ export class CharacterScene extends Phaser.Scene {
     this.refreshPreview('guard');
     this.descT.setText('');
     this.setMenu([
-      { label: 'APARIENCIA', onSelect: () => this.appearance() },
+      { label: 'EDITOR DE PERSONAJE', value: () => 'ropa · colores · auras', onSelect: () => go(this, 'Editor', { back: 'Character' }) },
       { label: 'TÉCNICAS EQUIPADAS', onSelect: () => this.loadout() },
       { label: 'TIENDA DE TÉCNICAS', onSelect: () => this.shop() },
+      { label: 'TIENDA DE COSMÉTICOS', onSelect: () => go(this, 'Editor', { back: 'Character', cat: 'pants' }) },
+      { label: 'REMATE DE K.O.', value: () => (Save.d.finisher === 'none' ? 'DESACTIVADO' : (FINISHERS[Save.d.finisher] || {}).name || ''), onSelect: () => this.finishers() },
       { label: 'CELEBRACIÓN DE VICTORIA', value: () => (CELEBRATIONS[d.profile.celebration] || {}).name || '', onSelect: () => this.celebration() },
       { label: 'TÍTULO', value: () => (TITLES.find(t => t.id === d.profile.title) || {}).name || '', onSelect: () => this.titles() },
       { label: 'NOMBRE', value: () => d.profile.name, onSelect: () => this.editName() },
       { label: 'VOLVER', onSelect: () => go(this, 'Menu') }
     ], { onBack: () => go(this, 'Menu') });
-  }
-
-  appearance() {
-    const p = Save.d.profile;
-    const save = () => { Save.save(); this.refreshPreview(); };
-    const cycle = (arr, cur, dir, ok = () => true) => {
-      let i = arr.indexOf(cur);
-      for (let n = 0; n < arr.length; n++) { i = (i + dir + arr.length) % arr.length; if (ok(arr[i])) return arr[i]; }
-      return cur;
-    };
-    const auraOk = c => reqMet((AURA_COLORS.find(a => a.c === c) || {}).req, Save.d);
-    const accOk = id => reqMet((ACCESSORIES.find(a => a.id === id) || {}).req, Save.d);
-    const auraIds = AURA_COLORS.map(a => a.c), accIds = ACCESSORIES.map(a => a.id);
-    this.setMenu([
-      { label: 'COLOR DEL CUERPO', value: () => p.color.toUpperCase(), onLeft: () => { p.color = cycle(BODY_COLORS, p.color, -1); save(); }, onRight: () => { p.color = cycle(BODY_COLORS, p.color, 1); save(); } },
-      { label: 'COLOR DE ACENTO', value: () => p.accent.toUpperCase(), onLeft: () => { p.accent = cycle(BODY_COLORS, p.accent, -1); save(); }, onRight: () => { p.accent = cycle(BODY_COLORS, p.accent, 1); save(); } },
-      { label: 'COLOR DEL AURA', value: () => (AURA_COLORS.find(a => a.c === p.aura) || {}).name || p.aura, onLeft: () => { p.aura = cycle(auraIds, p.aura, -1, auraOk); save(); }, onRight: () => { p.aura = cycle(auraIds, p.aura, 1, auraOk); save(); } },
-      { label: 'ACCESORIO', value: () => (ACCESSORIES.find(a => a.id === p.accessory) || {}).name || '', onLeft: () => { p.accessory = cycle(accIds, p.accessory, -1, accOk); save(); }, onRight: () => { p.accessory = cycle(accIds, p.accessory, 1, accOk); save(); } },
-      { label: 'VOLVER', onSelect: () => this.root() }
-    ], { onBack: () => this.root(), onChange: () => this.lockedInfo() });
-  }
-  lockedInfo() {
-    const lockedAura = AURA_COLORS.filter(a => !reqMet(a.req, Save.d)).map(a => `${a.name} (${reqText(a.req)})`);
-    const lockedAcc = ACCESSORIES.filter(a => !reqMet(a.req, Save.d)).map(a => `${a.name} (${reqText(a.req)})`);
-    this.descT.setText((lockedAura.length ? 'Auras bloqueadas: ' + lockedAura.slice(0, 4).join(', ') + '\n' : '') + (lockedAcc.length ? 'Accesorios bloqueados: ' + lockedAcc.slice(0, 4).join(', ') : '¡Todo desbloqueado!'));
   }
 
   loadout() {
@@ -90,13 +68,13 @@ export class CharacterScene extends Phaser.Scene {
   moveInfo(m) {
     if (!m) { this.descT.setText(''); return; }
     const h = m.hit || {};
-    this.descT.setText(`${m.name.toUpperCase()}  ·  ${m.cost || 0} energía${m.cd ? ' · recarga ' + (m.cd / 60).toFixed(1) + 's' : ''}\n${m.desc || ''}${h.dmg ? '\nDaño ' + h.dmg : ''}${m.tip ? '\nContra: ' + m.tip : ''}`);
+    this.descT.setText(`${m.name.toUpperCase()}  ·  ${m.humAura ? 'HUMILLACIÓN DE AURA' : (m.cost || 0) + ' energía'}${m.cd ? ' · recarga ' + (m.cd / 60).toFixed(1) + 's' : ''}\n${m.desc || ''}${m.when ? '\nCuándo: ' + m.when : ''}${h.dmg ? '\nDaño ' + h.dmg : ''}${m.tip ? '\nContra: ' + m.tip : ''}`);
     const pose = m.anim && m.anim[Math.min(1, m.anim.length - 1)];
     this.prev.setAnim(pose && typeof pose[1] === 'string' ? pose[1] : 'guard');
   }
   pickMove(slot) {
     const d = Save.d;
-    const pool = (slot === 'ult' ? ULT_IDS : SPECIAL_IDS).filter(id => d.unlockedMoves.includes(id));
+    const pool = (slot === 'ult' ? ULT_IDS : slot.startsWith('hum') ? AURA_IDS : SPECIAL_IDS).filter(id => d.unlockedMoves.includes(id));
     const equipped = Object.values(d.loadout);
     this.setMenu([
       ...pool.map(id => ({ label: MOVES[id].name, value: () => (d.loadout[slot] === id ? 'EQUIPADA' : equipped.includes(id) ? 'en uso' : ''), m: MOVES[id], onSelect: () => {
@@ -120,7 +98,7 @@ export class CharacterScene extends Phaser.Scene {
       const owned = d.unlockedMoves.includes(id);
       const rankOk = ri >= s.rank || d.prestige > 0;
       return {
-        label: (MOVES[id].slot === 'ult' ? '★ ' : '') + MOVES[id].name, m: MOVES[id],
+        label: (MOVES[id].slot === 'ult' ? '★ ' : '') + MOVES[id].name, m: MOVES[id], labelColor: RARITY[s.rarity || 'common'].color, color: RARITY[s.rarity || 'common'].color,
         value: () => (d.unlockedMoves.includes(id) ? 'COMPRADA' : rankOk ? s.price + ' AP' : '🔒 ' + RANKS[s.rank].name),
         onSelect: () => {
           if (d.unlockedMoves.includes(id)) { Audio.play('ui_deny'); return; }
@@ -138,6 +116,29 @@ export class CharacterScene extends Phaser.Scene {
     });
     items.push({ label: 'VOLVER', onSelect: () => this.root() });
     this.setMenu(items, { onBack: () => this.root(), onChange: it => this.moveInfo(it.m) });
+  }
+
+  // remates de K.O.: animación que se juega con el golpe que gana el combate. Se compran con AP y se equipan.
+  finishers() {
+    const d = Save.d;
+    if (!d.unlockedFinishers) d.unlockedFinishers = ['kickSpace', 'pantsDown'];
+    const items = Object.keys(FINISHERS).map(id => {
+      const F = FINISHERS[id];
+      return {
+        label: F.name, id,
+        value: () => (d.finisher === id ? 'EQUIPADO' : d.unlockedFinishers.includes(id) ? '' : F.price + ' AP'),
+        onSelect: () => {
+          if (!d.unlockedFinishers.includes(id)) {
+            if (d.ap < F.price) { toast(this, 'Te faltan ' + (F.price - d.ap) + ' AP', '#ff4d6d'); return; }
+            d.ap -= F.price; d.unlockedFinishers.push(id); toast(this, '¡Remate desbloqueado: ' + F.name + '!', '#ffd166'); Audio.play('victory');
+          }
+          d.finisher = id; Save.save(); this.root();
+        }
+      };
+    });
+    items.push({ label: 'DESACTIVADO', id: 'none', value: () => (d.finisher === 'none' ? 'EQUIPADO' : ''), onSelect: () => { d.finisher = 'none'; Save.save(); this.root(); } });
+    items.push({ label: 'VOLVER', onSelect: () => this.root() });
+    this.setMenu(items, { onBack: () => this.root(), onChange: it => this.descT.setText(it.id && FINISHERS[it.id] ? FINISHERS[it.id].desc + '\n\nSe activa con el golpe que gana el combate.' : it.id === 'none' ? 'Sin animación de remate.' : '') });
   }
 
   celebration() {

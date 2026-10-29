@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { Save } from '../core/Save.js';
 import { Audio } from '../core/Audio.js';
-import { txt, StickPreview } from '../ui/UI.js';
+import { txt, StickPreview, autoGrad } from '../ui/UI.js';
 import { hex, mix } from '../view/StickRenderer.js';
+import { Online } from '../net/Online.js';
 import { STATUS } from '../sim/status.js';
 import { MOVES } from '../sim/moves.js';
 import { keyName, Input } from '../core/Input.js';
@@ -18,6 +19,7 @@ export class HUDScene extends Phaser.Scene {
   create() {
     // la instancia de escena se reutiliza entre combates: reinicia el estado
     this.pills0 = []; this.pills1 = []; this.lastMove = null; this.tut = null; this.sl = null;
+    this.film = 0; this.filmMax = 0; this.recT = null; this.pingT = null; this.youT = null; // estado del combate anterior
     const b = this.fight.battle;
     this.b = b;
     this.versus = !!b.opts.versus;
@@ -58,8 +60,16 @@ export class HUDScene extends Phaser.Scene {
     const es = this.enemies();
     this.ePortrait = this.makePortrait(es[0], 1214, 56, -1, this.versus ? SIDE_COL[1] : 0xff4d6d);
     // barras de técnicas: jugador (izquierda) y, en multijugador, J2 (derecha)
-    this.bars = [this.buildSlots(this.p, 'left')];
-    if (this.p2) this.bars.push(this.buildSlots(this.p2, 'right'));
+    if (this.fight.online) {
+      // online: solo mi barra de técnicas (con mis teclas) y el indicador de ping
+      const you = this.fight.session.you, me = b.fighters[you];
+      this.bars = [this.buildSlots(me, you === 0 ? 'left' : 'right')];
+      this.pingT = txt(this, 640, 122, '', 14, '#7bd389', { ox: 0.5, oy: 0.5, body: true, bold: true }).setDepth(52);
+      this.youT = txt(this, you === 0 ? 128 : 1152, 104, '▲ TÚ', 14, '#ffd166', { ox: you === 0 ? 0 : 1, oy: 0.5, body: true, bold: true }).setDepth(52);
+    } else {
+      this.bars = [this.buildSlots(this.p, 'left')];
+      if (this.p2) this.bars.push(this.buildSlots(this.p2, 'right'));
+    }
     // overlays
     this.flashRect = this.add.rectangle(640, 360, 1280, 720, 0xffffff, 0).setDepth(60);
     this.lbTop = this.add.rectangle(640, -40, 1280, 80, 0x000000, 1).setDepth(55);
@@ -70,6 +80,7 @@ export class HUDScene extends Phaser.Scene {
       flash: (c, ms) => { this.flashRect.setFillStyle(c, 0.7); this.tweens.add({ targets: this.flashRect, fillAlpha: 0, duration: ms || 200 }); },
       ultBanner: d => this.ultBanner(d.f, d.def),
       letterbox: frames => this.letterbox(frames),
+      filmMode: frames => { this.film = frames; this.filmMax = frames; },
       ko: e => this.ko(e),
       bev: e => this.onBev(e),
       wave: n => { this.texts.wave.setText('OLEADA ' + n); this.announce('OLEADA ' + n, n % 5 === 0 ? '¡JEFE!' : '¡Vienen más!', '#ffd166'); }
@@ -100,7 +111,9 @@ export class HUDScene extends Phaser.Scene {
       s.cost = txt(this, s.x + W - 6, 661, String((MOVES[s.id] || {}).cost || 0), 13, '#7df9ff', { ox: 1, oy: 0.5, body: true });
       if (s.name.width > W - 8) s.name.setScale((W - 8) / s.name.width);
     });
-    return { f, slots, col: side === 'left' ? SIDE_COL[0] : SIDE_COL[1] };
+    // aviso de humillación de aura disponible (se ilumina solo cuando su condición se cumple)
+    const humT = txt(this, side === 'left' ? 24 : 1256, 626, '', 15, '#0b1a10', { ox: side === 'left' ? 0 : 1, oy: 0.5, body: true, bold: true }).setDepth(31);
+    return { f, slots, col: side === 'left' ? SIDE_COL[0] : SIDE_COL[1], humT, humKey: k('taunt'), side, humA: 0 };
   }
 
   startTutorial() {
@@ -136,8 +149,10 @@ export class HUDScene extends Phaser.Scene {
     if (T.i >= T.steps.length) {
       if (!T.done) {
         T.done = true;
-        Save.d.tutorialDone = true; Save.d.ap += 100; Save.save();
-        this.tutText.setText('¡TUTORIAL COMPLETADO! +100 AP').setColor('#ffd166'); this.tutStep.setText('Ya estás listo para el Camino del Aura');
+        // la recompensa del tutorial solo se cobra la primera vez
+        const first = !Save.d.tutorialDone;
+        Save.d.tutorialDone = true; if (first) Save.d.ap += 100; Save.save();
+        this.tutText.setText(first ? '¡TUTORIAL COMPLETADO! +100 AP' : '¡TUTORIAL COMPLETADO!').setColor('#ffd166'); this.tutStep.setText('Ya estás listo para el Camino del Aura');
         Audio.play('victory');
         this.time.delayedCall(3500, () => { this.tutText.destroy(); this.tutStep.destroy(); g.destroy(); this.tut = null; });
       }
@@ -153,7 +168,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   makePortrait(f, x, y, facing, ring) {
-    const prev = new StickPreview(this, x - facing * 6, y + 300, f.profile, { scale: 2.1, facing, anim: 'guard', depth: 3, glow: 0.3 });
+    const prev = new StickPreview(this, x - facing * 6, y + 300, f.profile, { scale: 2.1, facing, anim: 'guard', depth: 3, glow: 0.3, aura: false });
     const mg = this.make.graphics({ add: false }); mg.fillStyle(0xffffff); mg.fillCircle(x, y, 40);
     const mask = mg.createGeometryMask();
     prev.g.setMask(mask); prev.glow.setMask(mask);
@@ -241,6 +256,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   ultBanner(f, def) {
+    if (def.slim) return this.slimBanner(def);
     this.speedLines(45, hex(def.color || '#ffffff'));
     const c = this.add.container(0, 0).setDepth(58);
     const col = hex(def.color || '#ffffff');
@@ -249,18 +265,33 @@ export class HUDScene extends Phaser.Scene {
     g.fillStyle(0x000000, 0.78); g.fillRect(-200, 250, 1680, 210);
     g.fillStyle(col, 0.9); g.fillRect(-200, 250, 1680, 8); g.fillRect(-200, 452, 1680, 8);
     for (let i = 0; i < 30; i++) { g.fillStyle(col, 0.15); g.fillRect(Math.random() * 1280, 262 + Math.random() * 180, 80 + Math.random() * 200, 3); }
-    const prev = new StickPreview(this, left ? 300 : 980, 690, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4 });
+    const prev = new StickPreview(this, left ? 300 : 980, 690, f.profile, { scale: 3, facing: left ? 1 : -1, anim: (def.anim && def.anim[1] && typeof def.anim[1][1] === 'string') ? def.anim[1][1] : 'guard', depth: 59, glow: 1.4, aura: false });
     const m = this.make.graphics({ add: false }); m.fillStyle(0xffffff); m.fillRect(0, 258, 1280, 194);
     const mask = m.createGeometryMask(); prev.g.setMask(mask); prev.glow.setMask(mask);
     const nm = def.name.toUpperCase();
     const t1 = txt(this, left ? 540 : 740, 330, nm, Math.min(72, Math.floor(700 / (nm.length * 0.5))), def.color || '#ffffff', { ox: left ? 0 : 1, oy: 0.5, strokeThickness: 8 });
-    const t2 = txt(this, left ? 566 : 714, 400, 'ULTIMATE · ' + f.name, 24, '#ffffff', { ox: left ? 0 : 1, oy: 0.5 });
+    const t2 = txt(this, left ? 566 : 714, 400, (def.sub || 'ULTIMATE · ' + f.name), 24, '#ffffff', { ox: left ? 0 : 1, oy: 0.5 });
     c.add([g, t1, t2]);
     c.setAngle(left ? -4 : 4);
     c.x = left ? -1300 : 1300;
     this.tweens.add({ targets: c, x: 0, duration: 160, ease: 'Cubic.easeOut' });
     this.tweens.add({ targets: c, x: left ? 1400 : -1400, delay: 620, duration: 180, ease: 'Cubic.easeIn', onComplete: () => { c.destroy(); prev.destroy(); } });
     this.time.addEvent({ delay: 16, repeat: 50, callback: () => { prev.x = (left ? 300 : 980) + c.x; prev.update(); } });
+  }
+
+  // rótulo discreto arriba (remates): no tapa la acción
+  slimBanner(def) {
+    const col = hex(def.color || '#ffffff');
+    const g = this.add.graphics().setDepth(58);
+    g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.75, 0.75, 0);
+    g.fillRect(0, 112, 640, 64); g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.75, 0, 0, 0.75); g.fillRect(640, 112, 640, 64);
+    g.fillStyle(col, 0.9); g.fillRect(440, 112, 400, 2); g.fillRect(440, 174, 400, 2);
+    const t1 = txt(this, 640, 136, def.name.toUpperCase(), 34, def.color || '#ffffff', { ox: 0.5, oy: 0.5, strokeThickness: 6 }).setDepth(59);
+    const t2 = txt(this, 640, 164, def.sub || '', 14, '#ffffff', { ox: 0.5, oy: 0.5, body: true }).setDepth(59);
+    const all = [g, t1, t2];
+    all.forEach(o => o.setAlpha(0));
+    this.tweens.add({ targets: all, alpha: 1, duration: 180 });
+    this.tweens.add({ targets: all, alpha: 0, delay: 1500, duration: 300, onComplete: () => all.forEach(o => o.destroy()) });
   }
 
   // barra inclinada con degradado, fantasma de daño, marcas cada 10% y brillo
@@ -339,6 +370,18 @@ export class HUDScene extends Phaser.Scene {
 
   drawSlots(g, bar) {
     const f = bar.f, b = this.b;
+    if (bar.humT) {
+      const lo = f.loadout;
+      const avail = f.alive && b.phase === 'fight' && !f.move ? [lo.hum1, lo.hum2, lo.hum3].find(id => MOVES[id] && f.canUse(MOVES[id], true)) : null;
+      bar.humA += ((avail ? 1 : 0) - bar.humA) * 0.25;
+      if (avail) bar.humT.setText(`${bar.humKey}  ·  ${MOVES[avail].name.toUpperCase()}`);
+      bar.humT.setAlpha(bar.humA);
+      if (bar.humA > 0.02) {
+        const w = bar.humT.width + 22, x = bar.side === 'left' ? 14 : 1266 - w, pulse = 0.85 + Math.sin(b.frame * 0.25) * 0.15;
+        g.fillStyle(0x7bd389, 0.9 * bar.humA * pulse); g.fillRoundedRect(x, 614, w, 24, 12);
+        g.lineStyle(2, 0xffffff, 0.6 * bar.humA); g.strokeRoundedRect(x, 614, w, 24, 12);
+      }
+    }
     for (const s of bar.slots) {
       const m = MOVES[s.id]; if (!m) continue;
       const cd = f.cool[s.id] || 0;
@@ -368,6 +411,11 @@ export class HUDScene extends Phaser.Scene {
   update() {
     this.t++;
     const g = this.g; g.clear();
+    if (this.pingT) {
+      const n = Online.net, S = this.fight.session;
+      const ms = n ? Math.round(n.rtt) : 0, col = ms < 80 ? '#7bd389' : ms < 160 ? '#ffd166' : '#ff4d6d';
+      this.pingT.setText(`PING ${ms} ms${n && n.jitter > 8 ? ' · jitter ' + Math.round(n.jitter) : ''}${S && S.L - S.C > 30 ? ' · RED LENTA' : ''}`).setColor(col);
+    }
     const b = this.b, p = this.p;
     const T = this.texts;
     const es = this.enemies();
@@ -459,6 +507,19 @@ export class HUDScene extends Phaser.Scene {
     if (b.domain) { g.lineStyle(30, 0x8a2be2, 0.25); g.strokeRect(0, 0, 1280, 720); }
     this.drawAnnBand();
     this.drawSpeedLines();
+    // remate en modo película: grano, viñeta fuerte, rótulo REC y tinte cálido
+    if (this.film > 0) {
+      this.film--;
+      const k = Math.min(1, this.film / 15, (this.filmMax - this.film) / 10);
+      const gg = this.gTop;
+      for (let i = 0; i < 70; i++) { gg.fillStyle(Math.random() < 0.5 ? 0xffffff : 0x000000, 0.12 * k); gg.fillRect(Math.random() * 1280, Math.random() * 720, 2, 2); }
+      gg.fillStyle(0x000000, 0.35 * k); gg.fillRect(0, 0, 1280, 120); gg.fillRect(0, 600, 1280, 120);
+      gg.fillStyle(0xffb347, 0.06 * k); gg.fillRect(0, 0, 1280, 720);
+      if (Math.floor(this.t / 20) % 2) { gg.fillStyle(0xff2d2d, k); gg.fillCircle(1040, 108, 8); }
+      if (!this.recT) this.recT = txt(this, 1056, 108, 'REC  ◉  REMATE', 18, '#ffffff', { oy: 0.5 }).setDepth(60);
+      this.recT.setAlpha(k).setText('REC  ' + String(Math.floor((this.filmMax - this.film) / 60)).padStart(2, '0') + ':' + String(Math.floor((this.filmMax - this.film) % 60)).padStart(2, '0'));
+      this.recT.setPosition(1056, 108).setOrigin(0, 0.5);
+    } else if (this.recT) { this.recT.destroy(); this.recT = null; }
   }
 
   ghostOf(f) {
@@ -477,7 +538,8 @@ export class HUDScene extends Phaser.Scene {
     tH.setText(n + ' HITS');
     const lab = COMBO_LABELS.find(c => n >= c[0]);
     tL.setText(lab ? lab[1] : '').setColor(lab ? lab[2] : '#ffffff');
-    if (lab) tH.setTint(0xffffff, 0xffffff, hex(lab[2]), hex(lab[2])); else tH.clearTint();
+    const gc = lab ? lab[2] : '#ffffff';
+    if (tH._gc !== gc) { tH._gc = gc; autoGrad(tH, gc); }
     if (tD) tD.setText(Math.round(f.combo.dmg) + ' de aura');
     const a = Math.min(1, f.combo.t / 20);
     tH.setAlpha(a); tL.setAlpha(a); if (tD) tD.setAlpha(a);

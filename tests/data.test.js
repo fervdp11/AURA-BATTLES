@@ -16,10 +16,11 @@ test('más de 100 bots con identidad propia y loadouts válidos', () => {
     assert.ok(STYLES[b.style], 'estilo inválido ' + b.style);
     assert.ok(ACCESSORIES.some(a => a.id === b.accessory), 'accesorio ' + b.accessory);
     const ids = Object.values(b.loadout);
-    assert.equal(new Set(ids).size, 6, 'loadout repetido ' + b.name);
+    assert.equal(new Set(ids).size, 9, 'loadout repetido ' + b.name);
     for (const [slot, id] of Object.entries(b.loadout)) {
       assert.ok(MOVES[id], `movimiento inexistente ${id} en ${b.name}`);
       assert.equal(MOVES[id].slot === 'ult', slot === 'ult', `slot incorrecto ${id} en ${b.name}`);
+      assert.equal(MOVES[id].slot === 'aura', slot.startsWith('hum'), `hueco de humillación incorrecto ${id} en ${b.name}`);
     }
   }
   for (let lv = 0; lv < 7; lv++) assert.ok(BOTS.filter(b => b.level === lv).length >= 10);

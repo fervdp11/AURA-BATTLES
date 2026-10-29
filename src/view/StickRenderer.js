@@ -40,73 +40,308 @@ export function capsule(g, ax, ay, ar, bx, by, br, color, alpha) {
   g.fillCircle(bx, by, br);
 }
 
-// segmento con volumen: borde, relleno, sombra interior y brillo hacia la luz (arriba-izquierda)
-function limbSeg(g, ax, ay, ar, bx, by, br, col, oc, ow, a) {
-  capsule(g, ax, ay, ar + ow, bx, by, br + ow, oc, a);
-  capsule(g, ax, ay, ar, bx, by, br, col, a);
-  const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
-  let nx = -dy / L, ny = dx / L;
-  if (ny > 0 || (ny === 0 && nx > 0)) { nx = -nx; ny = -ny; }
-  capsule(g, ax - nx * ar * 0.45, ay - ny * ar * 0.45, ar * 0.5, bx - nx * br * 0.45, by - ny * br * 0.45, br * 0.5, shade(col, 0.86), a * 0.45);
-  capsule(g, ax + nx * ar * 0.4, ay + ny * ar * 0.4, ar * 0.28, bx + nx * br * 0.4, by + ny * br * 0.4, br * 0.28, lighten(col, 0.5), a * 0.55);
+// Cadena de segmentos con volumen. Primero TODOS los bordes, luego todos los rellenos y por último el
+// sombreado opaco: así las articulaciones (rodillas, codos) no muestran anillos ni círculos superpuestos.
+function limbChain(g, pts, radii, cols, oc, ow, a) {
+  const n = pts.length - 1;
+  for (let i = 0; i < n; i++) capsule(g, pts[i][0], pts[i][1], radii[i] + ow, pts[i + 1][0], pts[i + 1][1], radii[i + 1] + ow, oc, a);
+  for (let i = 0; i < n; i++) capsule(g, pts[i][0], pts[i][1], radii[i], pts[i + 1][0], pts[i + 1][1], radii[i + 1], cols[i], a);
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1], ar = radii[i], br = radii[i + 1], col = cols[i];
+    const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
+    let nx = -dy / L, ny = dx / L;
+    if (ny > 0 || (ny === 0 && nx > 0)) { nx = -nx; ny = -ny; }
+    // sombra (lado opuesto a la luz) y brillo (lado de la luz), en colores opacos ya mezclados
+    const t0 = 0.12, t1 = 0.88;
+    const sx = ax + dx * t0, sy = ay + dy * t0, ex = ax + dx * t1, ey = ay + dy * t1;
+    const r0 = ar + (br - ar) * t0, r1 = ar + (br - ar) * t1;
+    capsule(g, sx - nx * r0 * 0.45, sy - ny * r0 * 0.45, r0 * 0.5, ex - nx * r1 * 0.45, ey - ny * r1 * 0.45, r1 * 0.5, mix(col, shade(col, 0.8), 0.6), a);
+    capsule(g, sx + nx * r0 * 0.42, sy + ny * r0 * 0.42, r0 * 0.26, ex + nx * r1 * 0.42, ey + ny * r1 * 0.42, r1 * 0.26, mix(col, 0xffffff, 0.32), a);
+  }
+}
+function limbSeg(g, ax, ay, ar, bx, by, br, col, oc, ow, a) { limbChain(g, [[ax, ay], [bx, by]], [ar, br], [col], oc, ow, a); }
+
+// colores por zona según el patrón del cuerpo (multicolor)
+function bodyColors(look, time, flash, fc) {
+  const c1 = look.body, c2 = look.body2 ?? c1, p = look.bodyPattern || 'solid';
+  let up = c1, low = c1, arm = c1, leg = c1, head = c1;
+  if (p === 'split') { low = c2; leg = c2; }
+  else if (p === 'stripes') { arm = c2; leg = c2; }
+  else if (p === 'gradient') { up = mix(c1, c2, 0.25); low = mix(c1, c2, 0.6); arm = mix(c1, c2, 0.4); leg = c2; head = c1; }
+  else if (p === 'lava') { const k = 0.5 + Math.sin(time * 0.05) * 0.5; up = mix(c1, 0xffb000, k * 0.35); low = mix(c1, c2, 0.5); arm = mix(c1, c2, 0.3); leg = mix(c1, c2, 0.7); head = mix(c1, 0xffd000, 0.2); }
+  else if (p === 'rainbow') { const h = (time * 2) % 360; head = hsl(h, 0.8, 0.65); up = hsl((h + 40) % 360, 0.8, 0.62); arm = hsl((h + 80) % 360, 0.8, 0.62); low = hsl((h + 120) % 360, 0.8, 0.6); leg = hsl((h + 160) % 360, 0.8, 0.6); }
+  else if (p === 'galaxy') { up = mix(c1, c2, 0.3); low = c1; arm = mix(c1, c2, 0.5); leg = c1; head = mix(c1, c2, 0.2); }
+  const F = c => (flash ? mix(c, fc, flash) : c);
+  return { up: F(up), low: F(low), arm: F(arm), leg: F(leg), head: F(head) };
 }
 
 // ------------------------------------------------------------------
 export function drawFighter(g, glow, f, look, opts = {}) {
   const alpha = (opts.alpha ?? 1) * (f.alpha ?? 1);
   const j = squash(f.joints, f.squashX, f.squashY, f.x, f.y);
-  drawBody(g, glow, j, f.pose, f.scale, look, alpha, opts, f);
+  if (!f._cloth) f._cloth = { sway: 0, v: 0, px: f.x };
+  drawBody(g, glow, j, f.pose, f.scale, look, alpha, { ...opts, cloth: f._cloth, pantsDrop: f.pantsDrop || 0 }, f);
 }
 
 export function drawBody(g, glow, j, pose, s, look, alpha, opts = {}, f = null) {
   const oc = look.outline ?? 0x0a0a14;
-  const body = look.body;
   const flash = opts.flash || 0;
   const fc = look.flashColor ?? 0xffffff;
-  const bodyC = flash ? mix(body, fc, flash) : body;
-  const farC = flash ? mix(shade(body, 0.62), fc, flash) : shade(body, 0.62);
-  const d = j.fx >= 0 ? 1 : -1;
   const time = opts.time || 0;
+  const BC = bodyColors(look, time, flash, fc);
+  const far = c => shade(c, 0.66);
+  const d = j.fx >= 0 ? 1 : -1;
   const ow = 2.4 * s;
   const R = { up: 4.7 * s, el: 3.9 * s, wr: 3.1 * s, th: 6 * s, kn: 4.6 * s, an: 3.5 * s, hip: 8.2 * s, chest: 10.4 * s };
-
-  if (glow && opts.glow > 0) drawAuraGlow(glow, j, s, look, alpha, opts.glow, time, R);
   if (opts.ghost) { drawGhost(glow || g, j, s, opts.ghostColor ?? look.aura, alpha, R); return; }
-
+  // física secundaria de la tela: muelle amortiguado excitado por el desplazamiento horizontal
+  const cl = opts.cloth;
+  if (cl) {
+    const vx = j.hipX - (cl.px ?? j.hipX); cl.px = j.hipX;
+    cl.v += (-vx * 0.35 - cl.sway) * 0.18; cl.v *= 0.82; cl.sway = Math.max(-1.6, Math.min(1.6, cl.sway + cl.v));
+  }
+  const sway = cl ? cl.sway : Math.sin(time * 0.05) * 0.2;
+  const shark = look.skin === 'shark';
   const hn = pose.hsn, hf = pose.hsf;
   // brazo lejano
-  limbSeg(g, j.shX, j.shY, R.up, j.fElbowX, j.fElbowY, R.el, farC, oc, ow, alpha);
-  limbSeg(g, j.fElbowX, j.fElbowY, R.el, j.fHandX, j.fHandY, R.wr, farC, oc, ow, alpha);
-  drawHand(g, j.fElbowX, j.fElbowY, j.fHandX, j.fHandY, hf, pose.rf, s, farC, oc, alpha, d, time, true);
-  // pierna lejana
-  limbSeg(g, j.hipX, j.hipY, R.th, j.fKneeX, j.fKneeY, R.kn, farC, oc, ow, alpha);
-  limbSeg(g, j.fKneeX, j.fKneeY, R.kn, j.fFootX, j.fFootY, R.an, farC, oc, ow, alpha);
-  drawShoe(g, j.fKneeX, j.fKneeY, j.fFootX, j.fFootY, s, shade(look.accent, 0.6), oc, alpha, d, j.rootY);
-  // torso (cadera estrecha, pecho ancho) + cinturón de acento
-  const chX = j.hipX + (j.neckX - j.hipX) * 0.78, chY = j.hipY + (j.neckY - j.hipY) * 0.78;
-  limbSeg(g, j.hipX, j.hipY, R.hip, chX, chY, R.chest, bodyC, oc, ow, alpha);
-  capsule(g, chX, chY, R.chest * 0.9, j.neckX, j.neckY, 4.5 * s, bodyC, alpha);
-  {
-    const tx = j.neckX - j.hipX, ty = j.neckY - j.hipY, tl = Math.hypot(tx, ty) || 1;
-    const px = -ty / tl, py = tx / tl, bx = j.hipX + tx * 0.12, by = j.hipY + ty * 0.12, w = R.hip * 1.02;
-    capsule(g, bx - px * w, by - py * w, 2.2 * s, bx + px * w, by + py * w, 2.2 * s, look.accent, alpha);
+  if (shark) drawFin(g, j, 'f', s, far(BC.arm), oc, alpha, d);
+  else {
+    limbChain(g, [[j.shX, j.shY], [j.fElbowX, j.fElbowY], [j.fHandX, j.fHandY]], [R.up, R.el, R.wr], [far(BC.arm), far(BC.arm)], oc, ow, alpha);
+    drawHand(g, j.fElbowX, j.fElbowY, j.fHandX, j.fHandY, hf, pose.rf, s, far(BC.arm), oc, alpha, d, time, true);
   }
-  // cuello y cabeza
-  limbSeg(g, j.neckX, j.neckY, 4 * s, j.headX, j.headY, 3.6 * s, bodyC, oc, ow * 0.8, alpha);
-  if (look.accessory === 'chain' || look.accessory === 'scarf') drawNeckAcc(g, j, s, look, alpha, d, time);
-  drawHead(g, glow, j, s, bodyC, oc, alpha, d, look);
-  const showFace = Math.abs(j.fx) > 0.35;
-  if (showFace) drawFace(g, j, pose.face, s, oc, alpha, d, look, opts);
-  drawAccessory(g, glow, j, s, look, alpha, d, time, opts);
+  // pierna lejana (+ pantalón y calzado)
+  drawLeg(g, glow, j, 'f', s, R, far(BC.leg), oc, ow, alpha, d, look, sway, opts, pose, true, time);
+  // torso
+  const chX = j.hipX + (j.neckX - j.hipX) * 0.78, chY = j.hipY + (j.neckY - j.hipY) * 0.78;
+  if (shark) drawSharkBody(g, glow, j, s, BC, look, oc, alpha, d, time);
+  else {
+    limbChain(g, [[j.hipX, j.hipY], [chX, chY]], [R.hip, R.chest], [BC.up], oc, ow, alpha);
+    capsule(g, chX, chY, R.chest * 0.9, j.neckX, j.neckY, 4.5 * s, BC.up, alpha);
+    if (look.bodyPattern === 'galaxy') starDust(g, j.hipX, j.hipY, chX, chY, s, alpha, time);
+  }
+  drawWaist(g, glow, j, s, R, look, oc, alpha, d, opts, time);
+  if (!shark) {
+    // cuello y cabeza
+    limbSeg(g, j.neckX, j.neckY, 4 * s, j.headX, j.headY, 3.6 * s, BC.head, oc, ow * 0.8, alpha);
+    if (look.neck === 'chain' || look.neck === 'scarf' || look.accessory === 'chain' || look.accessory === 'scarf') drawNeckAcc(g, j, s, look, alpha, d, time);
+    drawHead(g, glow, j, s, BC.head, oc, alpha, d, look);
+    const showFace = Math.abs(j.fx) > 0.35;
+    if (showFace) drawFace(g, j, pose.face, s, oc, alpha, d, look, opts);
+    drawAccessory(g, glow, j, s, look, alpha, d, time, opts);
+  }
   // pierna cercana
-  limbSeg(g, j.hipX, j.hipY, R.th, j.nKneeX, j.nKneeY, R.kn, bodyC, oc, ow, alpha);
-  limbSeg(g, j.nKneeX, j.nKneeY, R.kn, j.nFootX, j.nFootY, R.an, bodyC, oc, ow, alpha);
-  drawShoe(g, j.nKneeX, j.nKneeY, j.nFootX, j.nFootY, s, look.accent, oc, alpha, d, j.rootY);
+  drawLeg(g, glow, j, 'n', s, R, BC.leg, oc, ow, alpha, d, look, sway, opts, pose, false, time);
   // brazo cercano
-  limbSeg(g, j.shX, j.shY, R.up, j.nElbowX, j.nElbowY, R.el, bodyC, oc, ow, alpha);
-  limbSeg(g, j.nElbowX, j.nElbowY, R.el, j.nHandX, j.nHandY, R.wr, bodyC, oc, ow, alpha);
-  drawHand(g, j.nElbowX, j.nElbowY, j.nHandX, j.nHandY, hn, pose.rn, s, bodyC, oc, alpha, d, time, false);
+  if (shark) drawFin(g, j, 'n', s, BC.arm, oc, alpha, d);
+  else {
+    limbChain(g, [[j.shX, j.shY], [j.nElbowX, j.nElbowY], [j.nHandX, j.nHandY]], [R.up, R.el, R.wr], [BC.arm, BC.arm], oc, ow, alpha);
+    drawHand(g, j.nElbowX, j.nElbowY, j.nHandX, j.nHandY, hn, pose.rn, s, BC.arm, oc, alpha, d, time, false);
+  }
+  if (look.bodyGlowLines && glow) { glow.lineStyle(2 * s, look.body2, 0.5 * alpha); glow.lineBetween(j.hipX, j.hipY, j.neckX, j.neckY); }
   if (opts.prop) opts.prop(g, glow, j, s, look, alpha, d, time);
+}
+
+function starDust(g, ax, ay, bx, by, s, a, time) {
+  for (let i = 0; i < 6; i++) {
+    const t = ((i * 0.37 + time * 0.003) % 1), x = ax + (bx - ax) * t + Math.sin(i * 7.1) * 5 * s, y = ay + (by - ay) * t + Math.cos(i * 3.3) * 3 * s;
+    g.fillStyle(0xffffff, a * (0.5 + 0.5 * Math.sin(time * 0.2 + i))); g.fillCircle(x, y, 0.9 * s);
+  }
+}
+
+// ---------- pierna + pantalón (con tela) + calzado ----------
+const lerp = (a, b, t) => a + (b - a) * t;
+function drawLeg(g, glow, j, k, s, R, col, oc, ow, a, d, look, sway, opts, pose, isFar, time) {
+  const hx = j.hipX, hy = j.hipY, kx = j[k + 'KneeX'], ky = j[k + 'KneeY'], fx = j[k + 'FootX'], fy = j[k + 'FootY'];
+  limbChain(g, [[hx, hy], [kx, ky], [fx, fy]], [R.th, R.kn, R.an], [col, col], oc, ow, a);
+  drawPantsLeg(g, glow, j, k, s, R, look, oc, a, d, sway, opts, isFar, time);
+  const sc = look.shoesColor ?? (isFar ? shade(look.accent, 0.6) : look.accent);
+  drawShoe(g, glow, kx, ky, fx, fy, s, isFar ? shade(sc, look.shoesColor != null ? 0.72 : 1) : sc, oc, a, d, j.rootY, look.shoes, pose.pt === k, time);
+}
+
+// tubo de tela con bajo recto (pantalón corto): polígono a lo largo de la pierna, contorno exterior y
+// pliegue sombreado en el lado opuesto a la luz — sin remates redondos en la rodilla
+function clothTube(g, pts, rad, col, dark, oc, ow, a) {
+  const n = pts.length, L = [], Rr = [], OL = [], OR = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)];
+    let dx = p1[0] - p0[0], dy = p1[1] - p0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    const nx = -dy, ny = dx, w = rad[i];
+    const ext = i === n - 1 ? ow : i === 0 ? -ow : 0;
+    const x = pts[i][0], y = pts[i][1];
+    L.push({ x: x + nx * w, y: y + ny * w }); Rr.push({ x: x - nx * w, y: y - ny * w });
+    OL.push({ x: x + nx * (w + ow) + dx * ext, y: y + ny * (w + ow) + dy * ext }); OR.push({ x: x - nx * (w + ow) + dx * ext, y: y - ny * (w + ow) + dy * ext });
+  }
+  g.fillStyle(oc, a); g.fillPoints(OL.concat(OR.reverse()), true);
+  g.fillStyle(col, a); g.fillPoints(L.concat(Rr.slice().reverse()), true);
+  // sombra suave de un lado (degradado en dos tonos opacos)
+  const S1 = [], S2 = [];
+  for (let i = 0; i < n; i++) { S1.push({ x: lerp(Rr[i].x, L[i].x, 0.0), y: lerp(Rr[i].y, L[i].y, 0.0) }); S2.push({ x: lerp(Rr[i].x, L[i].x, 0.3), y: lerp(Rr[i].y, L[i].y, 0.3) }); }
+  g.fillStyle(mix(col, dark, 0.7), a); g.fillPoints(S1.concat(S2.reverse()), true);
+  // dobladillo
+  g.lineStyle(Math.max(1, ow * 0.6), dark, a); g.lineBetween(lerp(L[n - 1].x, L[n - 2].x, 0.18), lerp(L[n - 1].y, L[n - 2].y, 0.18), lerp(Rr[n - 1].x, Rr[n - 2].x, 0.18), lerp(Rr[n - 1].y, Rr[n - 2].y, 0.18));
+}
+
+const PANTS = {
+  sport: { len: 0.8, w: 2.2, flare: 1.6 }, boxing: { len: 0.64, w: 3.0, flare: 2.4, band: 1 }, long: { len: 1.9, w: 1.8, flare: 0.8 },
+  joggers: { len: 1.94, w: 3.0, flare: 0.4, cuff: 1 }, camo: { len: 1.9, w: 2.6, flare: 1, camo: 1 }, future: { len: 1.92, w: 1.6, flare: 0.2, glow: 1 },
+  flames: { len: 1.9, w: 2.2, flare: 1, flames: 1 }, galaxy: { len: 1.9, w: 2.2, flare: 1, stars: 1 }, sixseven: { len: 0.84, w: 2.4, flare: 1.6, sixseven: 1 }
+};
+// punto a lo largo de la pierna: t en [0,1] muslo, [1,2] espinilla
+function legPoint(j, k, t) {
+  if (t <= 1) return [lerp(j.hipX, j[k + 'KneeX'], t), lerp(j.hipY, j[k + 'KneeY'], t)];
+  return [lerp(j[k + 'KneeX'], j[k + 'FootX'], t - 1), lerp(j[k + 'KneeY'], j[k + 'FootY'], t - 1)];
+}
+function drawPantsLeg(g, glow, j, k, s, R, look, oc, a, d, sway, opts, isFar, time) {
+  const P = PANTS[look.pants] || PANTS.sport;
+  const c1 = isFar ? shade(look.pantsColor, 0.72) : look.pantsColor, c2 = isFar ? shade(look.pantsColor2, 0.8) : look.pantsColor2;
+  const drop = opts.pantsDrop || 0;
+  if (drop > 0) {
+    // calzoncillos (nunca desnudez) y la prenda arrugada bajando por las piernas
+    const bx = lerp(j.hipX, j[k + 'KneeX'], 0.42), by = lerp(j.hipY, j[k + 'KneeY'], 0.42);
+    capsule(g, j.hipX, j.hipY, R.th + 3.2 * s, bx, by, R.th + 2.2 * s, oc, a);
+    capsule(g, j.hipX, j.hipY, R.th + 1.6 * s, bx, by, R.th + 0.8 * s, 0xffffff, a);
+    heartShape(g, lerp(j.hipX, bx, 0.55), lerp(j.hipY, by, 0.55), 2.6 * s, 0xff3b6b, a);
+    const top = Math.min(1.82, 0.15 + drop * 1.7), bot = Math.min(1.97, top + 0.25);
+    const [ax, ay] = legPoint(j, k, top), [cx, cy] = legPoint(j, k, bot);
+    capsule(g, ax, ay, R.kn + 5.5 * s, cx, cy, R.an + 5 * s, oc, a);
+    capsule(g, ax, ay, R.kn + 3.8 * s, cx, cy, R.an + 3.4 * s, c1, a);
+    g.lineStyle(1.4 * s, shade(c1, 0.6), a);
+    for (let i = 1; i < 4; i++) { const [wx, wy] = legPoint(j, k, lerp(top, bot, i / 4)); g.lineBetween(wx - 4 * s, wy - 1.5 * s, wx + 4 * s, wy + 1.5 * s); }
+    return;
+  }
+  const len = P.len;
+  const pts = [], rad = [];
+  const steps = len > 1 ? 4 : 3;
+  for (let i = 0; i <= steps; i++) {
+    const t = len * i / steps;
+    const p = legPoint(j, k, t);
+    const base = t <= 1 ? lerp(R.th, R.kn, t) : lerp(R.kn, R.an, t - 1);
+    let w = base + P.w * s;
+    if (i === steps) { w += P.flare * s * (1 + Math.abs(sway) * 0.4); if (P.cuff) w = base + 1.4 * s; }
+    // la tela se arrastra con el movimiento: el bajo se desplaza hacia atrás
+    if (i > 0) { const lag = sway * (i / steps) * (len > 1 ? 2.2 : 3.4) * s; p[0] += lag; p[1] += Math.abs(sway) * 0.6 * s * (i / steps); }
+    pts.push(p); rad.push(w);
+  }
+  if (len <= 1) clothTube(g, pts, rad, c1, shade(c1, 0.82), oc, 1.8 * s, a);
+  else {
+    const cols = []; for (let i = 0; i < steps; i++) cols.push(c1);
+    limbChain(g, pts, rad, cols, oc, 1.8 * s, a);
+  }
+  const [ex, ey] = pts[steps];
+  // detalles por estilo
+  if (P.band || look.pants === 'sport' || look.pants === 'sixseven') {
+    const [mx, my] = pts[Math.max(1, steps - 1)];
+    g.lineStyle(2.2 * s, c2, a); g.lineBetween(lerp(mx, ex, 0.6), lerp(my, ey, 0.6), ex, ey);
+  }
+  if (P.cuff) { g.fillStyle(oc, a); g.fillCircle(ex, ey, rad[steps] + 2.4 * s); g.fillStyle(shade(c1, 0.8), a); g.fillCircle(ex, ey, rad[steps] + 0.8 * s); }
+  if (P.camo) for (let i = 0; i < 4; i++) { const [px, py] = legPoint(j, k, 0.2 + i * 0.42); g.fillStyle(i % 2 ? c2 : shade(c1, 0.75), a); g.fillEllipse(px + (i % 2 ? 2 : -2) * s, py, 6 * s, 4 * s); }
+  if (P.flames) for (let i = 0; i < 3; i++) { const [px, py] = legPoint(j, k, 1.4 + i * 0.16); g.fillStyle(i === 1 ? 0xffd000 : c2, a); g.fillTriangle(px - 4 * s, py + 3 * s, px + 4 * s, py + 3 * s, px + Math.sin(time * 0.3 + i) * 2 * s, py - (7 + Math.sin(time * 0.4 + i * 2) * 2) * s); }
+  if (P.stars) starDust(g, pts[0][0], pts[0][1], ex, ey, s * 1.2, a, time);
+  if (P.glow && glow) { glow.lineStyle(2 * s, c2, 0.8 * a); glow.lineBetween(pts[0][0], pts[0][1], ex, ey); }
+  if (P.sixseven && !isFar) {
+    const [px, py] = legPoint(j, k, 0.45);
+    g.fillStyle(c2, a); g.fillRect(px - 3 * s, py - 4 * s, 2 * s, 8 * s); g.fillRect(px + 1 * s, py - 4 * s, 3 * s, 2 * s); g.fillRect(px + 2.2 * s, py - 4 * s, 1.6 * s, 8 * s);
+  }
+}
+// cintura del pantalón (encima del torso) — al bajarse, se ven los calzoncillos con goma de corazones
+function drawWaist(g, glow, j, s, R, look, oc, a, d, opts, time) {
+  const tx = j.neckX - j.hipX, ty = j.neckY - j.hipY, tl = Math.hypot(tx, ty) || 1;
+  const px = -ty / tl, py = tx / tl, w = R.hip * 1.08;
+  const drop = opts.pantsDrop || 0;
+  if (drop > 0) {
+    g.fillStyle(oc, a); g.fillCircle(j.hipX, j.hipY, R.hip + 3.2 * s);
+    g.fillStyle(0xffffff, a); g.fillCircle(j.hipX, j.hipY, R.hip + 1.6 * s);
+    capsule(g, j.hipX - px * w + tx * 0.1, j.hipY - py * w + ty * 0.1, 2 * s, j.hipX + px * w + tx * 0.1, j.hipY + py * w + ty * 0.1, 2 * s, 0xff3b6b, a);
+    heartShape(g, j.hipX + d * 2 * s, j.hipY - 1 * s, 3 * s, 0xff3b6b, a);
+    return;
+  }
+  const P = PANTS[look.pants] || PANTS.sport;
+  const c1 = look.pantsColor;
+  const top = 0.16;
+  const bx = j.hipX + tx * top, by = j.hipY + ty * top;
+  capsule(g, j.hipX, j.hipY, R.hip + 3.6 * s, bx, by, R.hip + 2.6 * s, oc, a);
+  capsule(g, j.hipX, j.hipY, R.hip + 2.2 * s, bx, by, R.hip + 1.2 * s, c1, a);
+  // cinturilla (acento) y cordón
+  const band = P.band ? look.pantsColor2 : look.accent;
+  capsule(g, bx - px * w, by - py * w, (P.band ? 3 : 2.2) * s, bx + px * w, by + py * w, (P.band ? 3 : 2.2) * s, band, a);
+  if (P.glow && glow) { glow.lineStyle(3 * s, look.pantsColor2, 0.7 * a); glow.lineBetween(bx - px * w, by - py * w, bx + px * w, by + py * w); }
+  void time;
+}
+
+function drawFin(g, j, k, s, col, oc, a, d) {
+  // aleta pectoral del tiburón (sigue al brazo del rig: mano = punta de la aleta)
+  const ax = j.shX, ay = j.shY, bx = j[k + 'HandX'], by = j[k + 'HandY'], ex = j[k + 'ElbowX'], ey = j[k + 'ElbowY'];
+  g.fillStyle(oc, a); g.fillTriangle(ax - 5 * s, ay - 3 * s, ax + 5 * s, ay + 4 * s, bx, by); g.fillTriangle(ax, ay, ex, ey, bx, by);
+  g.fillStyle(col, a); g.fillTriangle(ax - 3 * s, ay - 1 * s, ax + 3 * s, ay + 2.5 * s, lerp(ax, bx, 0.92), lerp(ay, by, 0.92)); g.fillTriangle(ax, ay, lerp(ax, ex, 0.95), lerp(ay, ey, 0.95), lerp(ax, bx, 0.9), lerp(ay, by, 0.9));
+  void d;
+}
+// cuerpo de tiburón sobre el rig: el torso es el lomo, la cabeza es el morro con dientes
+function drawSharkBody(g, glow, j, s, BC, look, oc, a, d, time) {
+  const hx = j.hipX, hy = j.hipY, nx = j.headX, ny = j.headY;
+  const ang = Math.atan2(ny - hy, nx - hx), L = Math.hypot(nx - hx, ny - hy);
+  const cx = (hx + nx) / 2, cy = (hy + ny) / 2;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const P = (u, v) => [cx + ca * u - sa * v * d, cy + sa * u + ca * v * d];
+  const ellipse = (rx, ry, col) => { g.fillStyle(col, a); const pts = []; for (let i = 0; i < 20; i++) { const t = i / 20 * Math.PI * 2; const p = P(Math.cos(t) * rx, Math.sin(t) * ry); pts.push({ x: p[0], y: p[1] }); } g.fillPoints(pts, true); };
+  const rx = L * 0.62, ry = 15 * s;
+  // cola (en la cadera)
+  const [t1x, t1y] = P(-rx - 2 * s, 0), [t2x, t2y] = P(-rx - 20 * s, -16 * s), [t3x, t3y] = P(-rx - 18 * s, 14 * s);
+  g.fillStyle(oc, a); g.fillTriangle(t1x, t1y, t2x, t2y, t3x, t3y);
+  g.fillStyle(shade(BC.up, 0.85), a); { const [u1x, u1y] = P(-rx, 0), [u2x, u2y] = P(-rx - 16 * s, -12 * s), [u3x, u3y] = P(-rx - 14 * s, 10 * s); g.fillTriangle(u1x, u1y, u2x, u2y, u3x, u3y); }
+  // aleta dorsal
+  const [f1x, f1y] = P(-6 * s, -ry + 2 * s), [f2x, f2y] = P(10 * s, -ry + 2 * s), [f3x, f3y] = P(-10 * s, -ry - 18 * s);
+  g.fillStyle(oc, a); g.fillTriangle(f1x - 2 * s, f1y, f2x + 2 * s, f2y, f3x, f3y - 2 * s);
+  g.fillStyle(shade(BC.up, 0.8), a); g.fillTriangle(f1x, f1y, f2x, f2y, f3x, f3y);
+  ellipse(rx + 2.4 * s, ry + 2.4 * s, oc);
+  ellipse(rx, ry, BC.up);
+  // vientre claro
+  g.fillStyle(mix(BC.up, 0xffffff, 0.75), a); { const pts = []; for (let i = 0; i <= 12; i++) { const t = i / 12 * Math.PI; const p = P(Math.cos(t) * rx * 0.85, Math.sin(t) * ry * 0.75 + 3 * s); pts.push({ x: p[0], y: p[1] }); } g.fillPoints(pts, true); }
+  // ojo, boca y dientes en el morro
+  const [ex, ey] = P(rx * 0.62, -ry * 0.25); g.fillStyle(0xffffff, a); g.fillCircle(ex, ey, 3.6 * s); g.fillStyle(oc, a); g.fillCircle(ex + ca * d * 0.8 * s, ey, 2 * s);
+  const [m1x, m1y] = P(rx * 0.98, ry * 0.25), [m2x, m2y] = P(rx * 0.45, ry * 0.32), [m3x, m3y] = P(rx * 0.92, ry * 0.62);
+  g.fillStyle(0x7a0b1d, a); g.fillTriangle(m1x, m1y, m2x, m2y, m3x, m3y);
+  g.fillStyle(0xffffff, a); for (let i = 0; i < 4; i++) { const u = rx * (0.5 + i * 0.12); const [q1x, q1y] = P(u, ry * 0.3), [q2x, q2y] = P(u + 3 * s, ry * 0.3), [q3x, q3y] = P(u + 1.5 * s, ry * 0.52); g.fillTriangle(q1x, q1y, q2x, q2y, q3x, q3y); }
+  // branquias
+  g.lineStyle(1.4 * s, shade(BC.up, 0.6), a); for (let i = 0; i < 3; i++) { const [g1x, g1y] = P(rx * 0.3 - i * 4 * s, -ry * 0.3), [g2x, g2y] = P(rx * 0.26 - i * 4 * s, ry * 0.2); g.lineBetween(g1x, g1y, g2x, g2y); }
+  if (look.accessory && look.accessory !== 'none') { const fake = { ...j, headX: P(rx * 0.7, 0)[0], headY: P(rx * 0.7, 0)[1], headR: 11 * s }; drawAccessory(g, glow, fake, s, look, a, d, time, {}); }
+}
+
+// calzado por estilo; 'pointed' = punta del pie estirada en la dirección de la espinilla (patadas verticales)
+function drawShoe(g, glow, kx, ky, x, y, s, col, oc, a, d, rootY, style = 'sneaker', pointed = false, time = 0) {
+  let ang = Math.atan2(y - ky, x - kx) - Math.PI / 2 * d;
+  if (pointed) ang = Math.atan2(y - ky, x - kx);
+  const flat = d > 0 ? 0 : Math.PI;
+  if (rootY !== undefined && !pointed) {
+    const k = Math.max(0, Math.min(1, 1 - Math.abs(rootY - y) / (14 * s)));
+    let diff = flat - ang; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+    ang += diff * k;
+  }
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const len = (style === 'boots' ? 11.5 : style === 'slides' ? 11 : 12) * s;
+  const tx = x + ca * len, ty = y + sa * len;
+  const hx = x - ca * 3.2 * s, hy = y - sa * 3.2 * s;
+  const nx = -sa, ny = ca, sx = d > 0 ? 1 : -1;
+  if (style === 'golden') col = 0xffd700;
+  if (style === 'slides') {
+    capsule(g, hx, hy, 3.6 * s, tx, ty, 3 * s, oc, a); capsule(g, hx, hy, 2.4 * s, tx, ty, 2 * s, 0xf4f4f8, a);
+    capsule(g, hx + nx * 2.2 * s * sx, hy + ny * 2.2 * s * sx, 1.6 * s, tx + nx * 2.2 * s * sx, ty + ny * 2.2 * s * sx, 1.4 * s, col, a);
+    return;
+  }
+  const r1 = (style === 'boots' || style === 'hightops' ? 5.2 : 4.6) * s;
+  capsule(g, hx, hy, r1, tx, ty, 3.9 * s, oc, a);
+  capsule(g, hx, hy, r1 - 1.4 * s, tx, ty, 2.6 * s, col, a);
+  if (style === 'hightops' || style === 'boots') { const ux = x - ca * 1 * s - nx * 5 * s * sx, uy = y - sa * 1 * s - ny * 5 * s * sx; capsule(g, hx, hy, 3.4 * s, ux, uy, 3.4 * s, oc, a); capsule(g, hx, hy, 2.2 * s, ux, uy, 2.2 * s, style === 'boots' ? shade(col, 0.8) : col, a); }
+  // suela
+  const soleC = style === 'boots' ? 0x3a2410 : style === 'cleats' ? 0x111111 : style === 'golden' ? 0xfff2b0 : 0xf2f2f2;
+  capsule(g, hx + nx * 2.4 * s * sx, hy + ny * 2.4 * s * sx, 1.3 * s, tx + nx * 2 * s * sx, ty + ny * 2 * s * sx, 1.2 * s, soleC, a * 0.95);
+  if (style === 'cleats') for (let i = 0; i < 3; i++) { const t = 0.15 + i * 0.35; g.fillStyle(0xdddddd, a); g.fillCircle(lerp(hx, tx, t) + nx * 3.6 * s * sx, lerp(hy, ty, t) + ny * 3.6 * s * sx, 1 * s); }
+  if (style === 'sneaker' || style === 'hightops' || style === 'shark') { g.lineStyle(1.2 * s, 0xffffff, a * 0.9); g.lineBetween(lerp(hx, tx, 0.3) - nx * 1 * s * sx, lerp(hy, ty, 0.3) - ny * 1 * s * sx, lerp(hx, tx, 0.7) + nx * 0.6 * s * sx, lerp(hy, ty, 0.7) + ny * 0.6 * s * sx); }
+  if (style === 'shark') { g.fillStyle(0x3a7bd5, a); g.fillTriangle(lerp(hx, tx, 0.3), lerp(hy, ty, 0.3), lerp(hx, tx, 0.55), lerp(hy, ty, 0.55), lerp(hx, tx, 0.4) - nx * 6 * s * sx, lerp(hy, ty, 0.4) - ny * 6 * s * sx); }
+  if (style === 'jets' && glow) {
+    const fl = (6 + Math.sin(time * 0.6) * 2) * s;
+    glow.fillStyle(0xff9e1c, 0.55 * a); glow.fillTriangle(hx + nx * 2 * s * sx - ca * 2 * s, hy + ny * 2 * s * sx - sa * 2 * s, hx + nx * 2 * s * sx + ca * 2 * s, hy + ny * 2 * s * sx + sa * 2 * s, hx + nx * (2 * s + fl) * sx, hy + ny * (2 * s + fl) * sx);
+  }
+  if (style === 'golden') { g.fillStyle(0xffffff, a * (0.5 + 0.5 * Math.sin(time * 0.3))); g.fillCircle(lerp(hx, tx, 0.6) - nx * 1 * s * sx, lerp(hy, ty, 0.6) - ny * 1 * s * sx, 0.9 * s); }
 }
 
 function drawHead(g, glow, j, s, col, oc, a, d, look) {
@@ -117,7 +352,7 @@ function drawHead(g, glow, j, s, col, oc, a, d, look) {
   g.fillStyle(shade(col, 0.8), a * 0.55); g.fillCircle(x + 3 * s, y + 3.2 * s, r * 0.82);
   g.fillStyle(col, a); g.fillCircle(x - 1.2 * s, y - 1.2 * s, r * 0.82);
   g.fillStyle(lighten(col, 0.6), a * 0.8); g.fillEllipse(x - r * 0.42, y - r * 0.5, r * 0.55, r * 0.32);
-  if (glow) { glow.lineStyle(2 * s, look.aura, 0.35 * a); glow.beginPath(); glow.arc(x, y, r + 2.6 * s, d > 0 ? Math.PI * 0.6 : -0.4, d > 0 ? Math.PI * 1.4 : 0.4); glow.strokePath(); }
+  void glow; void look; void d;
 }
 
 function drawGhost(g, j, s, gc, alpha, R) {
@@ -128,54 +363,6 @@ function drawGhost(g, j, s, gc, alpha, R) {
   seg('hip', 'fKnee', R.th, R.kn); seg('fKnee', 'fFoot', R.kn, R.an);
   seg('hip', 'nKnee', R.th, R.kn); seg('nKnee', 'nFoot', R.kn, R.an);
   g.fillStyle(gc, alpha); g.fillCircle(j.headX, j.headY, j.headR);
-}
-
-function drawAuraGlow(g, j, s, look, alpha, gi, time, R) {
-  const ac = look.auraFn ? look.auraFn(time) : look.aura;
-  const segs = [['hip', 'neck'], ['sh', 'fElbow'], ['fElbow', 'fHand'], ['sh', 'nElbow'], ['nElbow', 'nHand'], ['hip', 'fKnee'], ['fKnee', 'fFoot'], ['hip', 'nKnee'], ['nKnee', 'nFoot']];
-  for (const [mul, al] of [[3.4, 0.04], [2.2, 0.07], [1.5, 0.1]]) {
-    const w = 5 * s * mul * (1 + Math.sin(time * 0.15) * 0.05);
-    const a2 = al * gi * alpha;
-    for (const [p, q] of segs) capsule(g, j[p + 'X'], j[p + 'Y'], w, j[q + 'X'], j[q + 'Y'], w * 0.8, ac, a2);
-    g.fillStyle(ac, a2); g.fillCircle(j.headX, j.headY, j.headR + w * 0.7);
-  }
-  // llamas de aura que suben del cuerpo
-  if (gi > 0.55) {
-    const n = 9, k = Math.min(1.6, gi);
-    for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      const bx = j.hipX + (j.neckX - j.hipX) * t * 0.9 + Math.sin(time * 0.2 + i * 2.1) * 6 * s;
-      const by = j.hipY + (j.neckY - j.hipY) * t * 0.9 + 10 * s;
-      const h = (34 + 26 * Math.sin(time * 0.31 + i * 1.7) ** 2) * s * k;
-      const w = (9 + 3 * Math.sin(time * 0.4 + i)) * s;
-      const sway = Math.sin(time * 0.17 + i * 0.9) * 9 * s;
-      g.fillStyle(ac, 0.09 * alpha * k);
-      g.fillTriangle(bx - w, by, bx + w, by, bx + sway, by - h);
-      g.fillStyle(lighten(ac, 0.5), 0.07 * alpha * k);
-      g.fillTriangle(bx - w * 0.45, by, bx + w * 0.45, by, bx + sway * 0.8, by - h * 0.65);
-    }
-  }
-}
-
-function drawShoe(g, kx, ky, x, y, s, col, oc, a, d, rootY) {
-  // en el suelo el pie queda plano; en el aire, perpendicular a la espinilla
-  let ang = Math.atan2(y - ky, x - kx) - Math.PI / 2 * d;
-  const flat = d > 0 ? 0 : Math.PI;
-  if (rootY !== undefined) {
-    const k = Math.max(0, Math.min(1, 1 - Math.abs(rootY - y) / (14 * s)));
-    let diff = flat - ang; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-    ang += diff * k;
-  }
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const len = 12 * s;
-  const tx = x + ca * len, ty = y + sa * len;
-  const hx = x - ca * 3.2 * s, hy = y - sa * 3.2 * s;
-  capsule(g, hx, hy, 4.6 * s, tx, ty, 3.9 * s, oc, a);
-  capsule(g, hx, hy, 3.2 * s, tx, ty, 2.6 * s, col, a);
-  // suela
-  const nx = -sa, ny = ca;
-  const sx = d > 0 ? 1 : -1;
-  capsule(g, hx + nx * 2.4 * s * sx, hy + ny * 2.4 * s * sx, 1.3 * s, tx + nx * 2 * s * sx, ty + ny * 2 * s * sx, 1.2 * s, 0xf2f2f2, a * 0.9);
 }
 
 // ---------------- manos ----------------
@@ -357,11 +544,30 @@ function drawFace(g, j, face, s, oc, a, d, look, opts) {
     case 'sleep': L(ex1 - 2.5 * s, ey + s, ex1 + 2.5 * s, ey + s); L(ex2 - 2.5 * s, ey + s, ex2 + 2.5 * s, ey + s); dot(mx, my, 1.6); break;
     default: eye(ex1, ey, 2, 2.6, d * 0.5, 0); eye(ex2, ey, 2, 2.6, d * 0.5, 0); L(mx - d * 3 * s, my, mx + d * 3 * s, my, 2);
   }
-  if (shades && face !== 'ko') {
-    g.fillStyle(0x050505, a);
-    g.fillRoundedRect(Math.min(ex1, ex2) - 4.6 * s, ey - 3.4 * s, Math.abs(ex2 - ex1) + 9.2 * s, 6.2 * s, 2 * s);
-    g.fillStyle(0xffffff, 0.4 * a); g.fillRect(Math.min(ex1, ex2) - 2 * s, ey - 2.2 * s, 3 * s, 1.4 * s);
+  const eyew = shades ? 'shades' : look.eyewear || 'none';
+  if (eyew !== 'none' && face !== 'ko') {
+    const x0 = Math.min(ex1, ex2), w = Math.abs(ex2 - ex1);
+    switch (eyew) {
+      case 'shades':
+        g.fillStyle(0x050505, a); g.fillRoundedRect(x0 - 4.6 * s, ey - 3.4 * s, w + 9.2 * s, 6.2 * s, 2 * s);
+        g.fillStyle(0xffffff, 0.4 * a); g.fillRect(x0 - 2 * s, ey - 2.2 * s, 3 * s, 1.4 * s); break;
+      case 'round':
+        g.lineStyle(1.4 * s, oc, a); g.strokeCircle(ex1, ey, 3.6 * s); g.strokeCircle(ex2, ey, 3.6 * s); g.lineBetween(ex1 + 3.4 * s * Math.sign(ex2 - ex1), ey, ex2 - 3.4 * s * Math.sign(ex2 - ex1), ey); break;
+      case 'monocle':
+        g.lineStyle(1.6 * s, 0xd4af37, a); g.strokeCircle(ex2, ey, 4 * s); g.lineBetween(ex2, ey + 4 * s, ex2 - d * 2 * s, ey + 12 * s); break;
+      case 'visor':
+        g.fillStyle(0x0a0a14, a); g.fillRoundedRect(x0 - 5 * s, ey - 3 * s, w + 10 * s, 5.4 * s, 2.6 * s);
+        g.fillStyle(0x00f0ff, a * (0.75 + 0.25 * Math.sin((opts.time || 0) * 0.2))); g.fillRoundedRect(x0 - 4 * s, ey - 1.6 * s, w + 8 * s, 2.4 * s, 1.2 * s); break;
+      case 'star':
+        for (const ex of [ex1, ex2]) { g.fillStyle(0x0a0a14, a); drawStar5(g, ex, ey, 5.2 * s); g.fillStyle(0xff4fd8, a); drawStar5(g, ex, ey, 4 * s); } break;
+    }
   }
+}
+
+function drawStar5(g, x, y, r) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) { const t = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; pts.push({ x: x + Math.cos(t) * rr, y: y + Math.sin(t) * rr }); }
+  g.fillPoints(pts, true);
 }
 
 export function heartShape(g, x, y, r, color, a) {
@@ -373,7 +579,7 @@ export function heartShape(g, x, y, r, color, a) {
 
 function drawNeckAcc(g, j, s, look, a, d, time) {
   const ac = look.accent, oc = look.outline ?? 0x0a0a14;
-  if (look.accessory === 'chain') {
+  if (look.neck === 'chain' || look.accessory === 'chain') {
     for (let i = 0; i < 7; i++) {
       const t = i / 6;
       const x = j.neckX - d * 6 * s + d * 14 * s * t, y = j.neckY + 4 * s + Math.sin(t * Math.PI) * 9 * s;
@@ -395,6 +601,41 @@ function drawAccessory(g, glow, j, s, look, a, d, time, opts) {
   const ac = look.accent, oc = look.outline ?? 0x0a0a14;
   const fillO = (fn) => { fn(oc, 1.2); fn(ac, 1); };
   switch (acc) {
+    case 'headphones':
+      g.lineStyle(4.4 * s, oc, a); g.beginPath(); g.arc(hx, hy, r + 2.5 * s, Math.PI * 1.05, Math.PI * 1.95); g.strokePath();
+      g.lineStyle(2.6 * s, ac, a); g.beginPath(); g.arc(hx, hy, r + 2.5 * s, Math.PI * 1.05, Math.PI * 1.95); g.strokePath();
+      g.fillStyle(oc, a); g.fillRoundedRect(hx - d * r * 0.25 - 5 * s, hy - 6 * s, 10 * s, 12 * s, 4 * s);
+      g.fillStyle(ac, a); g.fillRoundedRect(hx - d * r * 0.25 - 3.6 * s, hy - 4.6 * s, 7.2 * s, 9.2 * s, 3 * s);
+      break;
+    case 'catEars':
+      for (const sx of [-0.55, 0.55]) {
+        const bx = hx + sx * r;
+        g.fillStyle(oc, a); g.fillTriangle(bx - 6 * s, top + 5 * s, bx + 6 * s, top + 5 * s, bx + sx * 3 * s, top - 11 * s);
+        g.fillStyle(ac, a); g.fillTriangle(bx - 4 * s, top + 4 * s, bx + 4 * s, top + 4 * s, bx + sx * 3 * s, top - 7.5 * s);
+        g.fillStyle(0xffb3c6, a); g.fillTriangle(bx - 2 * s, top + 3 * s, bx + 2 * s, top + 3 * s, bx + sx * 2.5 * s, top - 3 * s);
+      }
+      break;
+    case 'propeller': {
+      g.fillStyle(oc, a); g.beginPath(); g.arc(hx, hy - r * 0.15, r + 2.5 * s, Math.PI, 0); g.closePath(); g.fillPath();
+      const segs = [0xff4d6d, 0xffd166, 0x4cc9f0, 0x7bd389];
+      for (let i = 0; i < 4; i++) { g.fillStyle(segs[i], a); g.beginPath(); g.moveTo(hx, hy - r * 0.15); g.arc(hx, hy - r * 0.15, r + 0.6 * s, Math.PI + i * Math.PI / 4, Math.PI + (i + 1) * Math.PI / 4); g.closePath(); g.fillPath(); }
+      g.lineStyle(2 * s, oc, a); g.lineBetween(hx, top - 1 * s, hx, top - 7 * s);
+      const pw = Math.cos(time * 0.9) * 13 * s;
+      g.lineStyle(3 * s, 0xffd166, a); g.lineBetween(hx - pw, top - 7 * s, hx + pw, top - 7 * s);
+      break;
+    }
+    case 'helmet':
+      g.fillStyle(oc, a); g.fillCircle(hx, hy - 1 * s, r + 4.4 * s);
+      g.fillStyle(ac, a); g.fillCircle(hx, hy - 1 * s, r + 2.6 * s);
+      g.fillStyle(0x0a0a14, 0.85 * a); g.beginPath(); g.moveTo(hx + d * r * 0.05, hy - r * 0.55); g.lineTo(hx + d * (r + 3 * s), hy - r * 0.45); g.lineTo(hx + d * (r + 3 * s), hy + r * 0.3); g.lineTo(hx + d * r * 0.05, hy + r * 0.25); g.closePath(); g.fillPath();
+      g.fillStyle(0xffffff, 0.35 * a); g.fillRect(hx + d * r * 0.3, hy - r * 0.4, d * r * 0.4, 2 * s);
+      break;
+    case 'viking':
+      g.fillStyle(oc, a); g.beginPath(); g.arc(hx, hy - r * 0.1, r + 2.6 * s, Math.PI, 0); g.closePath(); g.fillPath();
+      g.fillStyle(0x9aa0a6, a); g.beginPath(); g.arc(hx, hy - r * 0.1, r + 1 * s, Math.PI, 0); g.closePath(); g.fillPath();
+      g.fillStyle(0x6b4423, a); g.fillRect(hx - r - 1 * s, hy - r * 0.25, 2 * r + 2 * s, 3.4 * s);
+      for (const sx of [-1, 1]) { g.fillStyle(oc, a); g.fillTriangle(hx + sx * r * 0.85, top + 6 * s, hx + sx * (r + 9 * s), top - 2 * s, hx + sx * (r + 4 * s), top - 14 * s); g.fillStyle(0xf4ead5, a); g.fillTriangle(hx + sx * r * 0.9, top + 4.5 * s, hx + sx * (r + 7 * s), top - 1.5 * s, hx + sx * (r + 3.6 * s), top - 11 * s); }
+      break;
     case 'cap':
       g.fillStyle(oc, a); g.beginPath(); g.arc(hx, hy - r * 0.15, r + 2.5 * s, Math.PI, 0); g.closePath(); g.fillPath();
       g.fillStyle(ac, a); g.beginPath(); g.arc(hx, hy - r * 0.15, r + 0.5 * s, Math.PI, 0); g.closePath(); g.fillPath();

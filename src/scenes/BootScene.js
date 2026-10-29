@@ -3,7 +3,7 @@ import { makeTextures } from '../view/Textures.js';
 import { Save } from '../core/Save.js';
 import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
-import { txt, go } from '../ui/UI.js';
+import { txt, go, gradText } from '../ui/UI.js';
 
 // Arranque: texturas, guardado y presentación animada del logo sincronizada con el sonido de inicio.
 // Si el navegador bloquea el audio, primero pide una pulsación y entonces arranca la presentación.
@@ -26,6 +26,8 @@ export class BootScene extends Phaser.Scene {
     this.aura.setShadow(0, 0, '#7df9ff', 36, true, true);
     this.legends = txt(this, 640, 418, 'L E G E N D S', 64, '#ffd166', { ox: 0.5, oy: 0.5, strokeThickness: 8 }).setAlpha(0);
     this.legends.setShadow(0, 0, '#ff9e3d', 24, true, true);
+    gradText(this.aura, ['#ffffff', '#c9fbff', '#7df9ff']);
+    gradText(this.legends, ['#fff3c4', '#ffd166', '#ff9e3d']);
     this.sub = txt(this, 640, 488, 'BATALLAS DE STICKMANS · MEMES · AURA', 22, '#c9c3e6', { ox: 0.5, oy: 0.5, body: true, bold: true }).setAlpha(0);
     this.press = txt(this, 640, 600, 'PULSA CUALQUIER TECLA O HAZ CLIC', 26, '#7df9ff', { ox: 0.5, oy: 0.5 });
     this.hint = txt(this, 640, 690, 'El audio se activa con tu primera pulsación', 15, '#7a7498', { ox: 0.5, oy: 0.5, body: true });
@@ -37,9 +39,18 @@ export class BootScene extends Phaser.Scene {
       Audio.setVolumes(d.settings.music, d.settings.sfx);
       this.beginIntro();
     };
-    const skip = () => { if (this._intro && this.it > 30) this.finish(); };
-    this.pop = Input.push(a => { if (!this._started) start(); else if (a === 'confirm' || a === 'back') skip(); });
-    this.input.on('pointerdown', () => { if (!this._started) start(); else skip(); });
+    // durante la presentación, Enter la adelanta al final; terminada, SOLO Enter (o START/A del mando) continúa.
+    const enter = code => code === 'Enter' || code === 'NumpadEnter';
+    const advance = () => {
+      if (!this._intro) return;
+      if (!this.introDone) { this.it = Math.max(this.it, HIT + 72); this.aura.setAlpha(1).setScale(1); this.legends.setAlpha(1).setX(640); this.sub.setAlpha(1); return; }
+      this.finish();
+    };
+    this.pop = Input.push((a, code, rep, pad) => {
+      if (!this._started) { start(); return; }
+      if (enter(code) || (pad !== undefined && a === 'confirm') || (code === 'Escape' && pad !== undefined)) advance();
+    });
+    this.input.on('pointerdown', () => { if (!this._started) start(); });
     this.events.once('shutdown', () => { if (this.pop) this.pop(); this.input.removeAllListeners(); });
     // si el audio ya está permitido (p. ej. al recargar tras interactuar), arranca solo
     try {
@@ -53,7 +64,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   beginIntro() {
-    this._intro = true; this.it = 0;
+    this._intro = true; this.it = 0; this.introDone = false;
     this.press.setAlpha(0); this.hint.setAlpha(0);
     Audio.play('intro');
   }
@@ -85,16 +96,11 @@ export class BootScene extends Phaser.Scene {
     }
     if (!this._intro) {
       this.press.setAlpha(0.5 + Math.sin(this.t * 0.08) * 0.45);
-      // logo tenue de fondo mientras espera
-      const k = 0.5 + Math.sin(this.t * 0.04) * 0.1;
-      ga.fillStyle(0x7b2cbf, 0.08 * k); ga.fillCircle(640, 330, 260);
       return;
     }
     this.it++;
     // fase 1: aura cargando en el centro
     if (it < HIT) {
-      const r = 20 + pre * 140;
-      for (let i = 0; i < 4; i++) { ga.fillStyle(0x7df9ff, 0.05 + pre * 0.06); ga.fillCircle(640, 330, r * (1 - i * 0.2)); }
       ga.lineStyle(3, 0xffffff, pre * 0.8);
       for (let i = 0; i < 12; i++) {
         const a = i / 12 * Math.PI * 2 + it * 0.05, rr = 360 * (1 - pre) + 40;
@@ -123,9 +129,11 @@ export class BootScene extends Phaser.Scene {
           ga.fillStyle(q < 0.5 ? 0x4cc9f0 : 0x7df9ff, 0.07 * (1 - q)); ga.fillCircle(x, y, 22 * (1 - q * 0.7));
         }
       }
-      for (let k2 = 0; k2 < 7; k2++) { ga.fillStyle(0x7df9ff, 0.012 + boost * 0.02); ga.fillEllipse(640, 335, 300 + k2 * 80, 120 + k2 * 34); }
-      if (post > 70) { this.press.setText('PULSA ENTER'); this.press.setAlpha(0.5 + Math.sin(this.t * 0.08) * 0.45); }
-      if (post > 200) this.finish();
+      // terminada la presentación: espera indefinida a que se pulse Enter (nunca avanza solo)
+      if (post > 70) {
+        if (!this.introDone) { this.introDone = true; this.press.setText('PULSA ENTER PARA CONTINUAR'); gradText(this.press, ['#e8feff', '#7df9ff', '#4cc9f0']); }
+        this.press.setAlpha(0.55 + Math.sin(this.t * 0.07) * 0.4);
+      }
     }
   }
 }

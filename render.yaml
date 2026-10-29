@@ -1,0 +1,11 @@
+# Despliegue en Render (https://render.com): "New + → Blueprint" y elige este repositorio.
+# Sirve el juego y el servidor online (WebSocket en /ws) desde la misma URL.
+services:
+  - type: web
+    name: aura-legends-online
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080

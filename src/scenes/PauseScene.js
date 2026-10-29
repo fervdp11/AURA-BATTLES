@@ -21,7 +21,7 @@ export class PauseScene extends Phaser.Scene {
     const training = spec.mode === 'training';
     const items = [
       { label: 'CONTINUAR', onSelect: () => this.close() },
-      { label: 'LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Pause' }); this.scene.bringToTop('MoveList'); this.scene.pause(); } }
+      { label: 'LISTA DE MOVIMIENTOS', onSelect: () => { this.menu.active = false; this.scene.launch('MoveList', { from: 'Pause', players: fs.battle.fighters.filter(f => f.isHuman && !f.controller).map(f => ({ prof: f.ctrlProfile, loadout: f.loadout, name: f.name })) }); this.scene.bringToTop('MoveList'); this.scene.pause(); } }
     ];
     if (training) {
       const setDummy = () => {

@@ -16,7 +16,7 @@ const KB = [
   [['ShiftLeft', 1.3], ['IntlBackslash', 1], ['KeyZ', 1], ['KeyX', 1], ['KeyC', 1], ['KeyV', 1], ['KeyB', 1], ['KeyN', 1], ['KeyM', 1], ['Comma', 1], ['Period', 1], ['Slash', 1], ['ShiftRight', 1.9]],
   [['ControlLeft', 1.4], ['AltLeft', 1.2], ['Space', 6.2], ['AltRight', 1.2], ['ArrowLeft', 1], ['ArrowDown', 1], ['ArrowRight', 1]]
 ];
-const SHORT = { left: '◀', right: '▶', up: 'SALTO', down: 'AGACH', light: 'RÁPIDO', heavy: 'FUERTE', special: 'ESPEC', skill1: 'HAB 1', skill2: 'HAB 2', ult: 'ULTI', dash: 'DASH', block: 'BLOQ', pause: 'PAUSA' };
+const SHORT = { left: '◀', right: '▶', up: 'SALTO', down: 'AGACH', light: 'RÁPIDO', heavy: 'FUERTE', special: 'ESPEC', skill1: 'HAB 1', skill2: 'HAB 2', ult: 'ULTI', taunt: 'HUMILL', dash: 'DASH', block: 'BLOQ', pause: 'PAUSA' };
 
 export class ControlsScene extends Phaser.Scene {
   constructor() { super('Controls'); }
