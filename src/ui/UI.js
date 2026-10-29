@@ -24,7 +24,26 @@ export function txt(scene, x, y, str, size = 24, color = '#ffffff', o = {}) {
   if (o.depth !== undefined) t.setDepth(o.depth);
   if (o.grad) gradText(t, o.grad);
   else if (!o.body && size >= 40 && o.grad !== false) autoGrad(t, color);
+  hookGlowPadding(t);
   return t;
+}
+// Un resplandor (sombra con desenfoque) se recorta en el borde del lienzo del texto y deja un rectángulo
+// duro: se añade margen suficiente para que se desvanezca por completo, sin mover el texto en pantalla.
+function hookGlowPadding(t) {
+  const orig = t.setShadow.bind(t);
+  t.setShadow = (x = 0, y = 0, c, blur = 0, st, fi) => {
+    orig(x, y, c, blur, st, fi);
+    const pad = Math.ceil(blur * 1.6 + Math.max(Math.abs(x), Math.abs(y)));
+    const old = t._glowPad || 0;
+    if (pad > old) {
+      t._glowPad = pad;
+      t.setPadding(pad, pad, pad, pad);
+      const d = pad - old;
+      t.x += d * (2 * t.originX - 1); t.y += d * (2 * t.originY - 1);
+      if (t._gradCols) gradText(t, t._gradCols);
+    }
+    return t;
+  };
 }
 
 // titulares: degradado derivado de su color (claro arriba → color → algo más oscuro abajo); se reaplica con setColor

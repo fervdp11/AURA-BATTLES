@@ -1,5 +1,5 @@
 // Guardado local (localStorage) de progreso, estadísticas, desbloqueos y ajustes.
-import { STARTER_MOVES, ACHIEVEMENTS, rankFor, matchRewards } from '../data/progression.js';
+import { STARTER_MOVES, ACHIEVEMENTS, rankFor, matchRewards, farmFactor } from '../data/progression.js';
 
 const KEY = 'aura-legends-save-v1';
 
@@ -13,6 +13,7 @@ function defaults() {
     ap: 300, rankPoints: 0, prestige: 0,
     stats: { wins: 0, losses: 0, matches: 0, streak: 0, bestStreak: 0, byLevel: [0, 0, 0, 0, 0, 0, 0], lossByLevel: [0, 0, 0, 0, 0, 0, 0], perfects: 0, maxCombo: 0, parries: 0, humiliations: 0, damage: 0, ults: 0, bosses: 0, survivalBest: 0, survivalRuns: 0, wins1v3: 0, charms: 0, playFrames: 0, specials: 0, kos: 0 },
     path: { cleared: {} }, pathChapters: 0,
+    ownedCosmetics: [], recentMatches: [], recordedMatchIds: [],
     achievements: {},
     lastLevel: 1,
     settings: { music: 0.55, sfx: 0.8, shake: 1, damageNumbers: true, showFps: false, hitboxes: false, bindings: null, bindingsP1: null, bindingsP2: null, quality: 'alta' }
@@ -48,7 +49,16 @@ class SaveManager {
   recordMatch(info) {
     const d = this.data, s = d.stats;
     const prevRank = rankFor(d.rankPoints).index;
-    const r = matchRewards({ ...info, prestige: d.prestige });
+    const before = { ap: d.ap, rp: d.rankPoints };
+    // cada partida se registra una sola vez (evita duplicar recompensas al reenviar el resultado)
+    if (info.matchId) {
+      if (d.recordedMatchIds.includes(info.matchId)) return { rp: 0, ap: 0, items: [], penalties: [], newAch: [], rank: rankFor(d.rankPoints), rankUp: false, before, after: before, duplicate: true };
+      d.recordedMatchIds.push(info.matchId); if (d.recordedMatchIds.length > 40) d.recordedMatchIds.shift();
+    }
+    const now = Date.now();
+    d.recentMatches = (d.recentMatches || []).filter(t => now - t < 3600e3);
+    const r = matchRewards({ ...info, prestige: d.prestige, farm: info.mode === 'training' ? 1 : farmFactor(d.recentMatches, now) });
+    if (info.mode !== 'training') d.recentMatches.push(now);
     if (info.mode !== 'training') {
       s.matches++;
       if (info.mode !== 'survival') {
@@ -74,10 +84,11 @@ class SaveManager {
     s.playFrames += info.frames || 0;
     d.rankPoints = Math.max(0, d.rankPoints + r.rp);
     d.ap += r.ap;
+    const apMatch = d.ap;
     const newAch = this.checkAchievements();
     const rank = rankFor(d.rankPoints);
     this.save();
-    return { ...r, newAch, rank, rankUp: rank.index > prevRank };
+    return { ...r, rp: d.rankPoints - before.rp, newAch, rank, rankUp: rank.index > prevRank, before, after: { ap: apMatch, rp: d.rankPoints }, achAp: d.ap - apMatch };
   }
 
   checkAchievements() {

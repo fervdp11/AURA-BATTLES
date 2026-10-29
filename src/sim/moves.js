@@ -1792,17 +1792,37 @@ export const FINISHERS = {
 };
 export const FINISHER_SPECS = {
   kickSpace: (a, d) => ({
-    frames: 40, off: [70, 0], tpose: t => (t < 22 ? 'scared' : 'airHurt'), cine: true,
-    anim: [[0, 'guard'], [10, 'bigKickW', 'anticip'], [22, 'bigKick', 'snap'], [34, 'bigKick'], [40, 'guard', 'inOut']],
-    hits: [{ f: 22, dmg: 0, spark: 'mega', fx: 'spaceKick', hitstop: 20, say: '¡AL ESPACIO!', sayColor: '#7df9ff', last: true }],
-    end: { kb: [5, -34], knockdown: true, space: true }
+    // carga, patada vertical: el empeine sube hasta la barbilla (contacto IK) y en ese mismo instante sale
+    // disparado en vertical; el atacante mantiene la patada arriba y luego mira al cielo con la mano en la frente
+    frames: 64, off: [44, 0], launchAt: 16, tpose: t => (t < 4 ? 'scared' : t < 15 ? 'dazedUp' : 'launchUp'), cine: true,
+    anim: [[0, 'guard'], [9, 'spaceKickW', 'anticip'], [15, 'spaceKick', 'snap'], [28, 'spaceKick'], [36, 'spaceKickHold', 'inOut'], [44, 'spaceKickDown', 'inOut'], [52, 'spaceLookUp', 'inOut'], [64, 'spaceLookUp']],
+    feet: (aa, t, fr) => {
+      if (fr < 11 || fr > 16) return null;
+      const j = t.joints, w = Math.min(1, (fr - 10) / 5);
+      // barbilla del rival (algo hacia su cara) y el tobillo justo debajo: la punta del pie toca la barbilla
+      return { f: { x: j.headX + t.facing * j.headR * 0.3 - aa.facing * 3 * aa.scale, y: j.headY + j.headR * 0.95 + 11 * aa.scale, w } };
+    },
+    hits: [{ f: 15, dmg: 0, spark: 'heavy', fx: 'spaceKick', hitstop: 14, react: 'launchUp', reactFrames: 60 }],
+    end: { kb: [0.4, -34], knockdown: true, space: true }
   }),
   pantsDown: (a, d) => ({
-    frames: 112, off: [t => (t < 18 ? 62 : 78), 0], tpose: t => (t < 16 ? 'held' : 'pantsShock'), cine: true,
-    anim: [[0, 'guard'], [10, 'pantsGrab', 'out'], [18, 'pantsGrab'], [24, 'crouch', 'snap'], [34, 'pointLaugh', 'out'], [104, 'pointLaugh']], mods: [[34, 104, 'laugh']],
-    hands: (aa, t, fr) => { if (fr < 8 || fr > 22) return null; const j = t.joints, w = Math.min(1, (fr - 7) / 3), drop = fr > 16 ? (fr - 16) * 9 * t.scale : 0; return { n: { x: j.hipX - aa.facing * 10 * t.scale, y: j.hipY + drop, w }, f: { x: j.hipX - aa.facing * 4 * t.scale, y: j.hipY + 4 + drop, w } }; },
-    frame: (ff, bb, mm, t, tt) => { if (t === 17) { tt.pantsDown = true; bb.emit('fx', { name: 'pantsDown', f: tt, a: ff }); } if (t > 20 && t % 18 === 0) bb.emit('fx', { name: 'laughPoint', f: ff }); },
-    hits: [{ f: 18, dmg: 0, drain: 0, fx: 'boing', say: '¡PANTALONES ABAJO!', sayColor: '#ff66cc', react: 'pantsShock', reactFrames: 90 }, { f: 100, dmg: 0, spark: 'light', last: true, react: 'pantsShock' }],
+    // agarra la cinturilla, tira hacia abajo (la prenda baja por las piernas con la mano) y se ríe señalando
+    frames: 112, off: [t => (t < 18 ? 58 : 74), 0], tpose: t => (t < 16 ? 'held' : 'pantsShock'), cine: true,
+    anim: [[0, 'guard'], [10, 'pantsGrab', 'out'], [16, 'pantsGrab'], [26, 'crouch', 'inOut'], [36, 'pointLaugh', 'out'], [104, 'pointLaugh']], mods: [[36, 104, 'laugh']],
+    hands: (aa, t, fr) => {
+      if (fr < 8 || fr > 27) return null;
+      const j = t.joints, s = t.scale, w = Math.min(1, (fr - 7) / 3) * (fr > 24 ? Math.max(0, 1 - (fr - 24) / 3) : 1);
+      const drop = t.pantsDrop || 0, top = Math.min(1.82, 0.15 + drop * 1.7);
+      const lp = (k, u) => (u <= 1 ? [j.hipX + (j[k + 'KneeX'] - j.hipX) * u, j.hipY + (j[k + 'KneeY'] - j.hipY) * u] : [j[k + 'KneeX'] + (j[k + 'FootX'] - j[k + 'KneeX']) * (u - 1), j[k + 'KneeY'] + (j[k + 'FootY'] - j[k + 'KneeY']) * (u - 1)]);
+      const [nx, ny] = drop > 0 ? lp('n', top) : [j.hipX, j.hipY - 4 * s], [fx, fy] = drop > 0 ? lp('f', top) : [j.hipX, j.hipY - 2 * s];
+      return { n: { x: nx - aa.facing * 6 * s, y: ny, w }, f: { x: fx - aa.facing * 2 * s, y: fy + 2 * s, w } };
+    },
+    frame: (ff, bb, mm, t, tt) => {
+      if (t >= 16 && t <= 25) tt.pantsDrop = Math.min(1, (t - 15) / 9);
+      if (t === 18) bb.emit('fx', { name: 'pantsDown', f: tt, a: ff });
+      if (t > 36 && t % 18 === 0) bb.emit('fx', { name: 'laughPoint', f: ff });
+    },
+    hits: [{ f: 18, dmg: 0, drain: 0, fx: 'boing', react: 'pantsShock', reactFrames: 90 }, { f: 100, dmg: 0, spark: 'light', last: true, react: 'pantsShock' }],
     end: { kb: [1, -3], knockdown: true }
   }),
   bonkGround: (a, d) => ({

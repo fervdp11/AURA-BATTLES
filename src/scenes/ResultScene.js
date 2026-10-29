@@ -7,6 +7,9 @@ import { playerProfile, quickOpponents } from '../core/Match.js';
 import { rankFor, auraText } from '../data/progression.js';
 import { PATH, stageById, chaptersCleared } from '../data/path.js';
 import { botById } from '../data/bots.js';
+import { CELEBRATIONS, DEFEATS } from '../sim/celebrations.js';
+
+const loopStart = a => { const c = CELEBRATIONS[a] || DEFEATS[a]; return c && c.anim.loop ? c.anim.loop[0] : 0; };
 
 export class ResultScene extends Phaser.Scene {
   constructor() { super('Result'); }
@@ -45,7 +48,9 @@ export class ResultScene extends Phaser.Scene {
       const bot = spec.enemies[0];
       txt(this, 640, 128, `${bot.name}: "${bot.quote}"`, 18, '#ff9fb0', { ox: 0.5, body: true, wrap: 900, align: 'center' });
     }
-    this.prev = new StickPreview(this, 250, 640, prof, { scale: 2.0, anim: win || surv ? (prof.celebration || 'flex') : 'dizzy', glow: win ? 1.4 : 0.4 });
+    // la animación continúa donde la dejó el combate (tramo en bucle), sin reiniciarse
+    const pa = win || surv ? (CELEBRATIONS[prof.celebration] ? prof.celebration : 'flex') : ((info && info.defeatAnim) || 'kneel');
+    this.prev = new StickPreview(this, 250, 640, prof, { scale: 2.0, anim: pa, startFrame: loopStart(pa), glow: win ? 1.4 : 0.4 });
     // aura final (-∞ a +∞)
     if (info && info.final && !training) this.auraFinal(240, 214, info.final, 1);
     // estadísticas
@@ -59,24 +64,43 @@ export class ResultScene extends Phaser.Scene {
     if (surv) lines.unshift(['Oleadas superadas', info.waves]);
     txt(this, 500, 165, 'ESTADÍSTICAS', 26, '#ffffff');
     lines.forEach(([k, v], i) => { txt(this, 500, 205 + i * 33, k, 19, '#c9c3e6', { body: true }); txt(this, 820, 205 + i * 33, String(v), 20, '#ffffff', { ox: 1 }); });
-    // recompensas
-    panel(this, 870, 150, 370, 370, { alpha: 0.85 });
-    txt(this, 890, 165, 'RECOMPENSAS', 26, '#ffffff');
-    if (rewards) {
-      this.apText = txt(this, 890, 210, '+0 AP', 40, '#7df9ff');
-      this.rpText = txt(this, 890, 262, '', 26, rewards.rp >= 0 ? '#7bd389' : '#ff6b6b');
-      this.rpText.setText((rewards.rp >= 0 ? '+' : '') + rewards.rp + ' PR');
+    // recompensas: resultado, ganancias, penalizaciones y cambio de saldo, cada cosa en su bloque
+    panel(this, 870, 150, 370, 380, { alpha: 0.85 });
+    const resLabel = surv ? 'SUPERVIVENCIA' : training ? 'ENTRENAMIENTO' : win ? 'VICTORIA' : 'DERROTA';
+    txt(this, 890, 160, 'RESULTADO', 14, '#9a94b8', { body: true });
+    txt(this, 1220, 158, resLabel, 20, col, { ox: 1 });
+    if (rewards && !rewards.duplicate) {
+      let y = 188;
+      txt(this, 890, y, 'RECOMPENSAS', 18, '#7bd389'); y += 24;
+      for (const it of rewards.items) {
+        txt(this, 900, y, it.label, 15, '#c9c3e6', { body: true });
+        txt(this, 1220, y, '+' + it.ap + ' AP', 16, '#7df9ff', { ox: 1 }); y += 20;
+      }
+      if (rewards.achAp) { txt(this, 900, y, 'Logros desbloqueados', 15, '#c9c3e6', { body: true }); txt(this, 1220, y, '+' + rewards.achAp + ' AP', 16, '#ffd166', { ox: 1 }); y += 20; }
+      if (rewards.penalties.length) {
+        y += 4; txt(this, 890, y, 'PENALIZACIONES', 18, '#ff6b6b'); y += 24;
+        for (const pe of rewards.penalties) {
+          txt(this, 900, y, pe.label, 15, '#c9c3e6', { body: true });
+          txt(this, 1220, y, pe.ap !== undefined ? pe.ap + ' AP' : pe.rp + ' PR', 16, '#ff6b6b', { ox: 1 }); y += 20;
+        }
+      }
+      y = Math.max(y + 6, 370);
+      // cambio de saldo
+      const b0 = rewards.before, b1 = { ap: Save.d.ap, rp: Save.d.rankPoints }, dAp = b1.ap - b0.ap, dRp = b1.rp - b0.rp;
+      txt(this, 890, y - 4, 'SALDO', 14, '#9a94b8', { body: true });
+      this.apText = txt(this, 890, y + 12, `${b0.ap} AP`, 26, '#ffd166');
+      txt(this, 1220, y + 16, (dAp >= 0 ? '+' : '') + dAp + ' AP', 20, dAp >= 0 ? '#7bd389' : '#ff6b6b', { ox: 1 });
+      this.rpText = txt(this, 890, y + 44, `${b0.rp} → ${b1.rp} PR`, 18, '#c9c3e6', { body: true });
+      txt(this, 1220, y + 44, (dRp > 0 ? '+' : '') + dRp + ' PR', 18, dRp > 0 ? '#7bd389' : dRp < 0 ? '#ff6b6b' : '#c9c3e6', { ox: 1 });
       const r = rewards.rank;
-      txt(this, 890, 310, 'RANGO', 18, '#9a94b8', { body: true });
-      txt(this, 890, 332, r.name.toUpperCase(), 34, r.color);
-      this.rankBar = this.add.graphics();
+      txt(this, 890, y + 72, r.name.toUpperCase(), 22, r.color);
+      txt(this, 1220, y + 76, r.next ? `${Save.d.rankPoints}/${r.next.rp} → ${r.next.name}` : 'Rango máximo', 13, '#c9c3e6', { ox: 1, body: true });
+      this.rankBar = this.add.graphics(); this.rankBarY = y + 104;
       this.rankTarget = r.progress; this.rankCur = 0; this.rankCol = Phaser.Display.Color.HexStringToColor(r.color).color;
-      txt(this, 890, 410, r.next ? `${Save.d.rankPoints} / ${r.next.rp} PR para ${r.next.name}` : 'Rango máximo: ¡haz prestigio!', 16, '#c9c3e6', { body: true, wrap: 340 });
-      txt(this, 890, 450, `Total: ${Save.d.ap} AP`, 22, '#ffd166');
       if (rewards.rankUp) { this.time.delayedCall(900, () => { toast(this, '¡SUBES DE RANGO! ' + r.name, r.color); Audio.play('victory'); }); }
       rewards.newAch.forEach((a, i) => toast(this, '🏆 ' + a.name + ' (+' + a.ap + ' AP)', '#ffd166', 1600 + i * 3000));
-      this.apTarget = rewards.ap; this.apCur = 0;
-    } else txt(this, 890, 220, 'Sin recompensas en entrenamiento.', 18, '#c9c3e6', { body: true, wrap: 330 });
+      this.apFrom = b0.ap; this.apTarget = b1.ap; this.apCur = b0.ap;
+    } else txt(this, 890, 220, rewards && rewards.duplicate ? 'Esta partida ya se había registrado.' : 'Sin recompensas en entrenamiento.', 18, '#c9c3e6', { body: true, wrap: 330 });
     // opciones
     const items = [];
     if (spec.mode === 'path' && win && nextStage) items.push({ label: 'SIGUIENTE COMBATE', onSelect: () => this.toStage(nextStage) });
@@ -102,9 +126,9 @@ export class ResultScene extends Phaser.Scene {
     t.setShadow(0, 0, cols[w], 30, true, true).setScale(2).setAlpha(0);
     this.tweens.add({ targets: t, scale: 1, alpha: 1, duration: 350, ease: 'Back.easeOut' });
     txt(this, 640, 116, info.names[w] + (result.rounds ? `  ·  rondas ${result.rounds[0]} – ${result.rounds[1]}` : ''), 22, '#ffffff', { ox: 0.5, oy: 0.5 });
-    const loserAnim = ['kneel', 'slump', 'rage', 'shrug'][Math.floor(Math.random() * 4)];
-    this.prev = new StickPreview(this, 170, 600, profs[0], { scale: 2.2, facing: 1, anim: w === 0 ? (profs[0].celebration || 'flex') : loserAnim, glow: w === 0 ? 1.4 : 0.3 });
-    this.prevB = new StickPreview(this, 1110, 600, profs[1], { scale: 2.2, facing: -1, anim: w === 1 ? (profs[1].celebration || 'flex') : loserAnim, glow: w === 1 ? 1.4 : 0.3 });
+    const an = i => (w === i ? (CELEBRATIONS[profs[i].celebration] ? profs[i].celebration : 'flex') : ((info.defeatAnim && info.defeatAnim[i]) || 'kneel'));
+    this.prev = new StickPreview(this, 170, 600, profs[0], { scale: 2.2, facing: 1, anim: an(0), startFrame: loopStart(an(0)), glow: w === 0 ? 1.4 : 0.3 });
+    this.prevB = new StickPreview(this, 1110, 600, profs[1], { scale: 2.2, facing: -1, anim: an(1), startFrame: loopStart(an(1)), glow: w === 1 ? 1.4 : 0.3 });
     txt(this, 170, 630, 'J1 · ' + info.names[0], 22, cols[0], { ox: 0.5 });
     txt(this, 1110, 630, 'J2 · ' + info.names[1], 22, cols[1], { ox: 0.5 });
     if (info.final) { this.auraFinal(170, 210, info.final[0], 0.8); this.auraFinal(1110, 210, info.final[1], 0.8); }
@@ -139,7 +163,7 @@ export class ResultScene extends Phaser.Scene {
     const col = Phaser.Display.Color.HexStringToColor(F.color).color;
     box.fillStyle(0x07040f, 0.88); box.fillRoundedRect(x - 190 * k, y - 62 * k, 380 * k, 124 * k, 14);
     box.lineStyle(3, col, 1); box.strokeRoundedRect(x - 190 * k, y - 62 * k, 380 * k, 124 * k, 14);
-    txt(this, x, y - 44 * k, 'AURA FINAL', 18 * k, '#c9c3e6', { ox: 0.5, oy: 0.5 }).setDepth(21);
+    txt(this, x, y - 44 * k, 'AURA DE TU ACTUACIÓN', 16 * k, '#c9c3e6', { ox: 0.5, oy: 0.5 }).setDepth(21);
     const num = txt(this, x, y + 2 * k, '0', 54 * k, F.color, { ox: 0.5, oy: 0.5, strokeThickness: 7 }).setDepth(21);
     const lab = txt(this, x, y + 42 * k, F.label, 18 * k, F.color, { ox: 0.5, oy: 0.5 }).setDepth(21).setAlpha(0);
     num.setShadow(0, 0, F.color, 18, true, true);
@@ -174,16 +198,17 @@ export class ResultScene extends Phaser.Scene {
     this.prev.update();
     if (this.prevB) this.prevB.update();
     this.menu.update();
-    if (this.apText && this.apCur < this.apTarget) {
-      this.apCur = Math.min(this.apTarget, this.apCur + Math.max(1, Math.ceil(this.apTarget / 60)));
-      this.apText.setText('+' + this.apCur + ' AP');
+    if (this.apText && this.apCur !== this.apTarget) {
+      const step = Math.max(1, Math.ceil(Math.abs(this.apTarget - this.apFrom) / 60));
+      this.apCur = this.apCur < this.apTarget ? Math.min(this.apTarget, this.apCur + step) : Math.max(this.apTarget, this.apCur - step);
+      this.apText.setText(this.apCur + ' AP');
       if (this.apCur % 5 === 0) Audio.play('coin', { minGap: 0.05 });
     }
     if (this.rankBar) {
       this.rankCur += (this.rankTarget - this.rankCur) * 0.05;
-      const g = this.rankBar; g.clear();
-      g.fillStyle(0x000000, 0.7); g.fillRoundedRect(890, 382, 330, 16, 8);
-      g.fillStyle(this.rankCol, 1); g.fillRoundedRect(890, 382, 330 * Math.max(0.02, this.rankCur), 16, 8);
+      const g = this.rankBar, y = this.rankBarY; g.clear();
+      g.fillStyle(0x000000, 0.7); g.fillRoundedRect(890, y, 330, 12, 6);
+      g.fillStyle(this.rankCol, 1); g.fillRoundedRect(890, y, 330 * Math.max(0.03, this.rankCur), 12, 6);
     }
   }
 }

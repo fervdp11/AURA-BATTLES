@@ -1,5 +1,5 @@
 // Rangos, recompensas, catálogo de desbloqueos, logros y títulos.
-import { MOVES, SPECIAL_IDS, ULT_IDS } from '../sim/moves.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS, FINISHERS } from '../sim/moves.js';
 import { CELEBRATIONS } from '../sim/celebrations.js';
 
 export const RANKS = [
@@ -20,31 +20,58 @@ export function rankFor(rp) {
   return { ...r, index: i, next, progress: next ? (rp - r.rp) / (next.rp - r.rp) : 1 };
 }
 
-// Puntos de rango y de aura por partida
-export function matchRewards({ win, level, mode, enemies = 1, perfect, maxCombo = 0, prestige = 0, humiliations = 0, boss = false, waves = 0 }) {
+// Puntos de rango (PR) y de aura (AP) por partida, desglosados: cada línea dice de dónde sale cada punto.
+// 'farm' (0..1) reduce el AP si se repiten partidas en bucle contra rivales muy por debajo (anti-farmeo).
+export function matchRewards({ win, level, mode, enemies = 1, perfect, maxCombo = 0, prestige = 0, humiliations = 0, boss = false, waves = 0, farm = 1, replay = false }) {
   const lv = level ?? 2;
-  let rp = 0, ap = 0;
-  if (mode === 'training') return { rp: 0, ap: 0 };
-  if (mode === 'survival') { rp = Math.round(waves * (6 + lv * 3)); ap = Math.round(waves * (15 + lv * 6)); }
-  else if (win) {
+  const items = [], penalties = [];
+  if (mode === 'training') return { rp: 0, ap: 0, items, penalties };
+  let rp = 0;
+  if (mode === 'survival') {
+    rp = Math.round(waves * (6 + lv * 3));
+    items.push({ label: `Oleadas superadas (${waves})`, ap: Math.round(waves * (15 + lv * 6)) });
+  } else if (win) {
     rp = Math.round((10 + lv * 9) * (1 + (enemies - 1) * 0.6) * (boss ? 1.8 : 1));
-    ap = Math.round((40 + lv * 22) * (1 + (enemies - 1) * 0.5) * (boss ? 2 : 1));
-    if (perfect) { rp += 10 + lv * 2; ap += 50; }
+    items.push({ label: boss ? 'Victoria contra jefe' : 'Victoria', ap: Math.round((40 + lv * 22) * (1 + (enemies - 1) * 0.5) * (boss ? 2 : 1)) });
+    if (perfect) { rp += 10 + lv * 2; items.push({ label: 'Victoria perfecta', ap: 50 }); }
   } else {
-    rp = -Math.round(Math.max(0, 6 - lv) * 1.5);
-    ap = 12 + lv * 4;
+    const loss = Math.round(Math.max(0, 6 - lv) * 1.5);
+    rp = -loss;
+    items.push({ label: 'Participación (derrota)', ap: 12 + lv * 4 });
+    if (loss) penalties.push({ label: 'Derrota', rp: -loss });
   }
-  ap += Math.min(60, maxCombo * 2) + humiliations * 5;
-  ap = Math.round(ap * (1 + prestige * 0.1));
-  return { rp, ap };
+  const cb = Math.min(60, maxCombo * 2);
+  if (cb) items.push({ label: `Combo máximo x${maxCombo}`, ap: cb });
+  if (humiliations) items.push({ label: `Humillaciones (${humiliations})`, ap: humiliations * 5 });
+  let ap = items.reduce((a, it) => a + it.ap, 0);
+  if (prestige) { const b = Math.round(ap * prestige * 0.1); items.push({ label: `Bonus de prestigio ${prestige}`, ap: b }); ap += b; }
+  if (replay && win) { const c = -Math.round(ap * 0.5); penalties.push({ label: 'Combate ya superado (-50%)', ap: c }); ap += c; }
+  if (farm < 1) { const c = -Math.round(ap * (1 - farm)); if (c) { penalties.push({ label: `Partidas en bucle (-${Math.round((1 - farm) * 100)}%)`, ap: c }); ap += c; } }
+  return { rp, ap: Math.max(0, ap), items, penalties };
+}
+
+// Recompensa media real por partida (victorias y derrotas a partes iguales, niveles 1-5, combo típico):
+// base de todos los precios de la tienda (técnicas, remates y cosméticos).
+export const AVG_MATCH_AP = (() => {
+  let sum = 0, n = 0;
+  for (let lv = 1; lv <= 5; lv++) for (const win of [true, false]) { sum += matchRewards({ win, level: lv, mode: 'quick', maxCombo: 7, humiliations: 1 }).ap; n++; }
+  return sum / n;
+})();
+// redondeo hacia arriba a 50: un artículo "de 5 partidas" nunca cuesta menos de 5 partidas
+export const priceMatches = m => Math.max(50, Math.ceil(AVG_MATCH_AP * m / 50) * 50);
+
+// Anti-farmeo: muchas partidas en la última hora reducen el AP poco a poco (nunca por debajo del 40%).
+export function farmFactor(recent, now = Date.now()) {
+  const n = (recent || []).filter(t => now - t < 3600e3).length;
+  return n <= 12 ? 1 : Math.max(0.4, Math.pow(0.93, n - 12));
 }
 
 // Movimientos iniciales; el resto se compran con Aura (AP) y algunos exigen rango
 export const STARTER_MOVES = ['sixSeven', 'fakeHandshake', 'siuuu', 'mewing', 'rizz', 'sixSevenBarrage', 'hitTheWoah', 'sideEye', 'broReallyThought', 'chillGuy', 'invisibleDap', 'griddy', 'lBozo', 'bonk'];
 
+// tier: [partidas medias que cuesta, rango mínimo (índice), rareza]
 const TIER_OF = {
-  // tier: [precio, rango mínimo (índice)]
-  1: [150, 0], 2: [300, 1], 3: [550, 2], 4: [850, 3], 5: [1300, 4], 6: [2000, 5]
+  1: [5, 0, 'common'], 2: [7, 1, 'common'], 3: [11, 2, 'rare'], 4: [16, 3, 'rare'], 5: [26, 4, 'epic'], 6: [45, 5, 'legendary']
 };
 const MOVE_TIERS = {
   1: ['snapWalk', 'fakeGreeting', 'doubleSlap', 'shoulderBrush', 'defaultDance', 'sigmaStare', 'noReaction', 'fakeHighFive', 'disrespectfulDodge', 'ratio', 'aimbot', 'emotionalDamage', 'dabOn', 'backflipDiss', 'skillIssue', 'ggEz', 'hitTheWoah', 'bananaSlip'],
@@ -55,9 +82,17 @@ const MOVE_TIERS = {
   6: ['finalAuraJudgment', 'domainExpansion', 'auraOverload']
 };
 export const MOVE_SHOP = {};
-for (const t in MOVE_TIERS) for (const id of MOVE_TIERS[t]) if (MOVES[id] && !STARTER_MOVES.includes(id)) MOVE_SHOP[id] = { price: TIER_OF[t][0] * (MOVES[id].slot === 'ult' ? 1.6 : 1) | 0, rank: TIER_OF[t][1], tier: +t };
+for (const t in MOVE_TIERS) for (const id of MOVE_TIERS[t]) if (MOVES[id] && !STARTER_MOVES.includes(id)) MOVE_SHOP[id] = { price: priceMatches(TIER_OF[t][0] * (MOVES[id].slot === 'ult' ? 1.4 : 1)), rank: TIER_OF[t][1], tier: +t, rarity: TIER_OF[t][2] };
 // cualquier especial no listado
-for (const id of [...SPECIAL_IDS, ...ULT_IDS]) if (!MOVE_SHOP[id] && !STARTER_MOVES.includes(id)) MOVE_SHOP[id] = { price: 600, rank: 2, tier: 3 };
+for (const id of [...SPECIAL_IDS, ...ULT_IDS]) if (!MOVE_SHOP[id] && !STARTER_MOVES.includes(id)) MOVE_SHOP[id] = { price: priceMatches(TIER_OF[3][0]), rank: 2, tier: 3, rarity: 'rare' };
+
+// Remates: mismas reglas de economía (los gratuitos siguen gratis; lo ya comprado se conserva)
+const FIN_RARITY = { kickSpace: null, pantsDown: null, bonkGround: ['rare', 13], explosionWalk: ['epic', 28] };
+for (const id in FINISHERS) {
+  const r = FIN_RARITY[id] === undefined ? ['rare', 13] : FIN_RARITY[id];
+  FINISHERS[id].rarity = r ? r[0] : 'common';
+  FINISHERS[id].price = r ? priceMatches(r[1]) : 0;
+}
 
 // Cosméticos
 export const BODY_COLORS = ['#f4f4f8', '#ffd166', '#ff6b6b', '#4cc9f0', '#7bd389', '#c084fc', '#ff9f1c', '#2ec4b6', '#f72585', '#a3a3a3', '#3a86ff', '#e9c46a', '#06d6a0', '#ef476f', '#8338ec', '#fb5607', '#222222'];
@@ -166,6 +201,8 @@ export function finalAura({ stats = {}, win, perfect, shutout, level = 3, finish
   if (opp && opp.humiliations) v -= opp.humiliations * 40;
   v = Math.round(v);
   const tiers = [[3000, 'AURA LEGENDARIA', '#ffd166'], [1800, 'AURA SIGMA', '#c084fc'], [900, 'MUCHA AURA', '#7df9ff'], [200, 'AURA DECENTE', '#7bd389'], [-200, 'AURA NEUTRA', '#c9c3e6'], [-1000, 'AURA NEGATIVA', '#ff9f1c'], [-Infinity, 'AURA EN LA RUINA', '#ff4d6d']];
+  // el texto nunca contradice el resultado: ganar es como mínimo "aura decente"; perder, como mucho
+  if (win) v = Math.max(v, 200); else v = Math.min(v, 899);
   const t = tiers.find(x => v >= x[0]);
   return { value: v, label: t[1], color: t[2] };
 }

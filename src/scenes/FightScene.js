@@ -12,10 +12,18 @@ import { MOVES } from '../sim/moves.js';
 
 const DUMMY = { id: 'dummy', name: 'Muñeco de Prácticas', style: 'balanced', level: 3, accessory: 'none', color: '#d4a373', aura: '#ffffff', accent: '#8d5524', quote: '...', celebration: 'bow', scale: 1, maxAura: 1000, loadout: { special: 'sixSeven', specialF: 'fakeHandshake', specialD: 'siuuu', skill1: 'rizz', skill2: 'hitTheWoah', ult: 'sixSevenBarrage' } };
 
+function snapJoints(f) {
+  const j = f.joints; if (!j || j.hipX === undefined) return;
+  const p = f._pj || (f._pj = {});
+  for (const k in j) if (typeof j[k] === 'number') p[k] = j[k];
+  f._px = f.x; f._py = f.y; f._pf = f.facing; f._pv = true;
+}
+
 export class FightScene extends Phaser.Scene {
   constructor() { super('Fight'); }
   init(data) { this.spec = { ...(data.spec || { mode: 'training' }) }; }
   create() {
+    this.matchId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     if (this.scene.isActive('Demo') || this.scene.isPaused('Demo')) this.scene.stop('Demo');
     const spec = this.spec;
     const st = Save.d.settings;
@@ -119,7 +127,7 @@ export class FightScene extends Phaser.Scene {
       const [a, b2] = this.battle.fighters;
       const vs = Save.d.versusStats || (Save.d.versusStats = { matches: 0, p1: 0, p2: 0 });
       vs.matches++; vs[result.winnerTeam === 0 ? 'p1' : 'p2']++; Save.save();
-      const info = { winner: result.winnerTeam, rounds: result.rounds, frames: this.battle.frame, stats: [{ ...a.stats }, { ...b2.stats }], names: [a.name, b2.name], aura: [a.aura / a.maxAura, b2.aura / b2.maxAura] };
+      const info = { winner: result.winnerTeam, rounds: result.rounds, frames: this.battle.frame, stats: [{ ...a.stats }, { ...b2.stats }], names: [a.name, b2.name], defeatAnim: [a.defeatAnim || 'kneel', b2.defeatAnim || 'kneel'], aura: [a.aura / a.maxAura, b2.aura / b2.maxAura] };
       // aura final de cada jugador (de -∞ a +∞)
       info.final = [a, b2].map((q, i) => { const o = i ? a : b2, won = result.winnerTeam === i; return finalAura({ stats: q.stats, opp: o.stats, win: won, perfect: won && (o.stats.dmg || 0) <= 0, shutout: !won && (q.stats.dmg || 0) <= 0, level: 4, finisher: !!q.stats.finisher }); });
       this.time.delayedCall(400, () => go(this, 'Result', { spec: { ...spec, score }, result, info, rewards: null }));
@@ -130,7 +138,8 @@ export class FightScene extends Phaser.Scene {
       mode: spec.mode, win: result.win, level: spec.levelOverride ?? Math.max(...spec.enemies.map(e => e.level)),
       enemies: spec.enemies.length, perfect: result.perfect, maxCombo: p.stats.maxCombo, humiliations: p.stats.humiliations,
       boss: spec.enemies.some(e => e.boss), stats: p.stats, frames: this.battle.frame, waves: spec.mode === 'survival' ? this.wave - 1 : 0,
-      charms: this.battle.charmsByPlayer || 0, kos: this.kos
+      charms: this.battle.charmsByPlayer || 0, kos: this.kos,
+      defeatAnim: p.defeatAnim || 'kneel', matchId: this.matchId, replay: spec.mode === 'path' && !!(Save.d.path.cleared || {})[spec.stageId]
     };
     if (spec.mode === 'survival') info.win = false;
     info.final = finalAura({ stats: p.stats, win: info.win, perfect: !!result.perfect && info.win, shutout: !info.win && spec.mode !== 'survival' && (p.stats.dmg || 0) <= 0, level: info.level, finisher: !!p.stats.finisher, enemies: info.enemies });
@@ -151,11 +160,14 @@ export class FightScene extends Phaser.Scene {
       const inputs = {};
       for (const f of b.fighters) if (f.isHuman && !f.controller) inputs[f.id] = Input.readGame(f.ctrlProfile);
       Input.clearPressed();
+      // instantánea del paso anterior para interpolar el dibujo (cámara lenta y pantallas de >60 Hz fluidas)
+      for (const f of b.fighters) snapJoints(f);
       b.step(inputs);
       if (b.slowmo > 0) b.slowmo--;
       this.acc -= 16.667; n++;
       if (this.spec.mode === 'training') this.trainingTick();
     }
+    this.view.interp = Math.max(0, Math.min(1, this.acc / 16.667));
     this.view.update(delta);
   }
 

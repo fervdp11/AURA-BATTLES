@@ -137,8 +137,10 @@ export class HUDScene extends Phaser.Scene {
     if (T.i >= T.steps.length) {
       if (!T.done) {
         T.done = true;
-        Save.d.tutorialDone = true; Save.d.ap += 100; Save.save();
-        this.tutText.setText('¡TUTORIAL COMPLETADO! +100 AP').setColor('#ffd166'); this.tutStep.setText('Ya estás listo para el Camino del Aura');
+        // la recompensa del tutorial solo se cobra la primera vez
+        const first = !Save.d.tutorialDone;
+        Save.d.tutorialDone = true; if (first) Save.d.ap += 100; Save.save();
+        this.tutText.setText(first ? '¡TUTORIAL COMPLETADO! +100 AP' : '¡TUTORIAL COMPLETADO!').setColor('#ffd166'); this.tutStep.setText('Ya estás listo para el Camino del Aura');
         Audio.play('victory');
         this.time.delayedCall(3500, () => { this.tutText.destroy(); this.tutStep.destroy(); g.destroy(); this.tut = null; });
       }
@@ -242,6 +244,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   ultBanner(f, def) {
+    if (def.slim) return this.slimBanner(def);
     this.speedLines(45, hex(def.color || '#ffffff'));
     const c = this.add.container(0, 0).setDepth(58);
     const col = hex(def.color || '#ffffff');
@@ -255,13 +258,28 @@ export class HUDScene extends Phaser.Scene {
     const mask = m.createGeometryMask(); prev.g.setMask(mask); prev.glow.setMask(mask);
     const nm = def.name.toUpperCase();
     const t1 = txt(this, left ? 540 : 740, 330, nm, Math.min(72, Math.floor(700 / (nm.length * 0.5))), def.color || '#ffffff', { ox: left ? 0 : 1, oy: 0.5, strokeThickness: 8 });
-    const t2 = txt(this, left ? 566 : 714, 400, 'ULTIMATE · ' + f.name, 24, '#ffffff', { ox: left ? 0 : 1, oy: 0.5 });
+    const t2 = txt(this, left ? 566 : 714, 400, (def.sub || 'ULTIMATE · ' + f.name), 24, '#ffffff', { ox: left ? 0 : 1, oy: 0.5 });
     c.add([g, t1, t2]);
     c.setAngle(left ? -4 : 4);
     c.x = left ? -1300 : 1300;
     this.tweens.add({ targets: c, x: 0, duration: 160, ease: 'Cubic.easeOut' });
     this.tweens.add({ targets: c, x: left ? 1400 : -1400, delay: 620, duration: 180, ease: 'Cubic.easeIn', onComplete: () => { c.destroy(); prev.destroy(); } });
     this.time.addEvent({ delay: 16, repeat: 50, callback: () => { prev.x = (left ? 300 : 980) + c.x; prev.update(); } });
+  }
+
+  // rótulo discreto arriba (remates): no tapa la acción
+  slimBanner(def) {
+    const col = hex(def.color || '#ffffff');
+    const g = this.add.graphics().setDepth(58);
+    g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0.75, 0.75, 0);
+    g.fillRect(0, 112, 640, 64); g.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.75, 0, 0, 0.75); g.fillRect(640, 112, 640, 64);
+    g.fillStyle(col, 0.9); g.fillRect(440, 112, 400, 2); g.fillRect(440, 174, 400, 2);
+    const t1 = txt(this, 640, 136, def.name.toUpperCase(), 34, def.color || '#ffffff', { ox: 0.5, oy: 0.5, strokeThickness: 6 }).setDepth(59);
+    const t2 = txt(this, 640, 164, def.sub || '', 14, '#ffffff', { ox: 0.5, oy: 0.5, body: true }).setDepth(59);
+    const all = [g, t1, t2];
+    all.forEach(o => o.setAlpha(0));
+    this.tweens.add({ targets: all, alpha: 1, duration: 180 });
+    this.tweens.add({ targets: all, alpha: 0, delay: 1500, duration: 300, onComplete: () => all.forEach(o => o.destroy()) });
   }
 
   // barra inclinada con degradado, fantasma de daño, marcas cada 10% y brillo

@@ -1,6 +1,6 @@
 // Catálogo de cosméticos (solo apariencia: nunca dan ventaja), rarezas, precios calculados a partir de las
 // recompensas reales por partida, propiedad/equipamiento y construcción del "look" que usa el renderer.
-import { matchRewards, reqMet, AURA_COLORS, ACCESSORIES, BODY_COLORS } from './progression.js';
+import { AVG_MATCH_AP, priceMatches, reqMet, AURA_COLORS, ACCESSORIES, BODY_COLORS } from './progression.js';
 
 export const RARITY = {
   common: { name: 'COMÚN', color: '#b8c0cc', mult: 5 },
@@ -9,15 +9,9 @@ export const RARITY = {
   legendary: { name: 'LEGENDARIO', color: '#ffd166', mult: 60 }
 };
 
-// Recompensa media real por partida (victorias y derrotas a partes iguales, niveles 1-5, combo típico).
-export const AVG_MATCH_AP = (() => {
-  let sum = 0, n = 0;
-  for (let lv = 1; lv <= 5; lv++) for (const win of [true, false]) { sum += matchRewards({ win, level: lv, mode: 'quick', maxCombo: 7, humiliations: 1 }).ap; n++; }
-  return sum / n;
-})();
-const round50 = v => Math.max(50, Math.round(v / 50) * 50);
-// Un artículo común cuesta ~5 partidas medias; raro, épico y legendario, bastante más.
-export const priceFor = rarity => round50(AVG_MATCH_AP * RARITY[rarity].mult);
+export { AVG_MATCH_AP };
+// Un artículo común cuesta al menos ~5 partidas medias; raro, épico y legendario, bastante más.
+export const priceFor = rarity => priceMatches(RARITY[rarity].mult);
 
 export const SLOTS = {
   skin: 'TIPO DE CUERPO', body: 'COLORES DEL CUERPO', pants: 'PANTALONES', shoes: 'CALZADO',

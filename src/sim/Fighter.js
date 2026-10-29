@@ -555,6 +555,11 @@ export class Fighter {
     L.f++;
     const t = L.target;
     const spec = L.spec;
+    // tras el lanzamiento (launchAt) el rival ya vuela solo: el atacante termina su animación sin él
+    if (L.launched) {
+      if (L.f >= spec.frames) { m.lock = null; m.f = m.def.startup + m.def.active; if (spec.recovery !== undefined) m.f = m.def.startup + m.def.active + m.def.recovery - spec.recovery; }
+      return;
+    }
     if (!t.alive && !spec.allowKO) { this.b.releaseLock(this, L, true); this.endMove(); return; }
     const off = spec.off || [60, 0];
     const ox = typeof off[0] === 'function' ? off[0](L.f) : off[0];
@@ -574,6 +579,7 @@ export class Fighter {
     if (spec.hits) for (const h of spec.hits) if (h.f === L.f) this.b.lockHit(this, t, h, m);
     if (spec.frame) spec.frame(this, this.b, m, L.f, t);
     if (!this.move || this.move.lock !== L) return;
+    if (spec.launchAt && L.f >= spec.launchAt) { this.b.launchFromLock(this, L); return; }
     if (L.f >= spec.frames) {
       this.b.releaseLock(this, L, false);
       m.lock = null;
@@ -725,6 +731,8 @@ export class Fighter {
         return 'hit' + (this.hitSeq || 0);
       }
       case 'airhit': {
+        // lanzado al espacio: sube recto, rígido y agitando brazos (sin girar en horizontal)
+        if (this.toSpace) { copyPose(POSES.launchUp, out); out.lean += Math.sin(this.sf * 0.5) * 6; out.hn[0] += Math.sin(this.sf * 0.9) * 8; out.hf[0] -= Math.sin(this.sf * 0.9 + 1) * 8; return 'space'; }
         const big = this.vy < -10 || this.juggle > 2;
         copyPose(big ? POSES.tumble : POSES.airHurt, out);
         out.lean += -Math.max(-30, Math.min(40, this.vy * 3));
@@ -804,13 +812,21 @@ export class Fighter {
     computeJoints(p, this.x, this.y, fx, s, grounded, this.joints, o);
     // contactos de manos declarados por el movimiento o la llave (apretón de manos, tortazo en la cara...)
     const hc = this.handContacts();
-    if (hc) {
-      for (const k of ['n', 'f']) if (hc[k]) {
+    // contactos de pie de una llave (patada con contacto exacto en la barbilla, pisotón...)
+    const L = this.move && this.move.lock;
+    const fc = L && L.spec.feet && L.target ? L.spec.feet(this, L.target, L.f, this.b) : null;
+    if (hc || fc) {
+      if (hc) for (const k of ['n', 'f']) if (hc[k]) {
         const cur = [this.joints[k + 'HandX'], this.joints[k + 'HandY']];
         const w = hc[k].w ?? 1;
         o.hands[k] = [cur[0] + (hc[k].x - cur[0]) * w, cur[1] + (hc[k].y - cur[1]) * w];
       }
-      computeJoints(p, this.x, this.y, fx, s, grounded, this.joints, o);
+      if (fc) for (const k of ['n', 'f']) if (fc[k]) {
+        const cur = [this.joints[k + 'FootX'], this.joints[k + 'FootY']];
+        const w = fc[k].w ?? 1;
+        o.feet[k] = [cur[0] + (fc[k].x - cur[0]) * w, cur[1] + (fc[k].y - cur[1]) * w];
+      }
+      computeJoints(p, this.x, this.y, fx, s, grounded && !fc, this.joints, o);
     }
     this.ovrHands = o.hands; this.ovrFeet = o.feet;
     hurtboxFromJoints(this.joints, this.hurt);
