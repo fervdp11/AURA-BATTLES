@@ -10,8 +10,12 @@ por código; las únicas dependencias empaquetadas son Phaser y dos fuentes OFL 
 npm install
 npm run dev        # servidor de desarrollo (http://localhost:5173)
 npm run build      # build de producción en dist/ (estático, se puede abrir desde cualquier hosting)
-npm test           # pruebas: IA vs IA, todos los movimientos, supervivencia, integridad de datos
+npm test           # pruebas: IA vs IA, movimientos, determinismo, guardado y online con dos clientes reales
+npm start          # compila y arranca el servidor online + juego en http://localhost:8080
 ```
+
+El modo online necesita el servidor (`server/server.js`): ver **[ONLINE.md](ONLINE.md)** para jugar en red local
+o desplegarlo (Docker, Render, Fly.io). GitHub Pages solo sirve el juego estático, no el servidor.
 
 ## Controles (personalizables en Ajustes; también funciona con mando)
 
@@ -26,6 +30,7 @@ npm test           # pruebas: IA vs IA, todos los movimientos, supervivencia, in
 | Dash / esquiva | Shift (+dirección, invulnerable unos frames; también en el aire) |
 | Bloqueo / Parry | Espacio (mantener = bloquear; pulsar justo antes del golpe = parry) |
 | Aura Burst | Shift + Espacio mientras recibes un combo (50 de energía) |
+| Humillación de aura | V (la equipada cuya condición se cumpla; recupera tu aura sin dañar) |
 | Pausa | Esc / P |
 
 ## Contenido
@@ -45,14 +50,22 @@ npm test           # pruebas: IA vs IA, todos los movimientos, supervivencia, in
   (agresivo, zoner, contraataque, tramposo, agarrador, fanfarrón, chill, equilibrado), 7 niveles (NPC Despistado →
   Aura God), errores simulados, parries temporizados con disciplina ante fintas, antiaéreos, castigos, combos,
   lectura de hábitos del jugador y reparto de turnos de ataque en 1v2/1v3.
+- **Humillaciones de Aura**: 10 gestos que recuperan aura propia sin dañar al rival (Good Boy, Sacudir el polvo,
+  Palmadita de consuelo, Siesta Sigma, Revisar la hora, Aplauso sarcástico, Pulgar arriba, Bostezo aburrido,
+  Atarse los cordones, Selfie con el caído), cada una con condición, alcance, enfriamiento, contacto de manos y
+  riesgo; el derribado puede despertar con rabia. La IA las usa, las castiga y aprende durante el combate.
+- **Remates de K.O.** cinematográficos: patada espacial vertical, bajada de pantalones, Bonk Sello y Explosión de Espaldas.
+- **Online 1v1**: salas con código o enlace, servidor autoritativo, predicción con rollback, reconexión y revancha.
 - **113 bots** con nombre, aspecto, personalidad, frase y técnicas propias, incluidos 8 jefes.
 - **Modos**: Jugar (1v1, 1v2, 1v3, jefe), Camino del Aura (8 capítulos, 40 combates), Supervivencia (oleadas y jefes),
   Duelo personalizado, Entrenamiento (muñeco configurable, datos de frames, hitboxes y tutorial guiado).
 - **Progresión local**: victorias, derrotas, rachas, récords, estadísticas por dificultad, rangos (Sin Aura → Aura God),
-  prestigio, 31 logros, títulos, tienda de técnicas con AP, cosméticos (colores, auras, 18 accesorios) y 15 celebraciones.
-- **Audiovisual**: 7 escenarios procedurales con parallax y público reactivo, auras, partículas, rayos, estelas,
-  afterimages, ondas expansivas, squash & stretch, bloom, música phonk generada en tiempo real (7 pistas) y voces
-  de los memes mediante síntesis de voz del navegador.
+  prestigio, 31 logros, títulos, tienda de técnicas con AP y editor de personaje con cosméticos por rareza (cuerpos
+  multicolor, pantalones con física de tela, calzado, gorras, gafas, cascos, auras y el tiburón Tralalero), sin ventaja
+  competitiva; precios basados en lo que se gana de media por partida y anti-farmeo.
+- **Audiovisual**: 7 escenarios procedurales con parallax (sin público), auras por capas con partículas, sombras
+  suaves según la luz, rayos, estelas, ondas expansivas, squash & stretch, música phonk generada en tiempo real y
+  efectos de sonido sintetizados (sin voces).
 
 ## Arquitectura
 
