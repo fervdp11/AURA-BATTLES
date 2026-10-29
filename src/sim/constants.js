@@ -27,13 +27,13 @@ export const JUGGLE_LIMIT = 7;
 export const COMBO_HIT_LIMIT = 16;
 export const BURST_COST = 50;
 
-export const ACTIONS = ['light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'dash', 'block'];
+export const ACTIONS = ['light', 'heavy', 'special', 'skill1', 'skill2', 'ult', 'dash', 'block', 'taunt'];
 
 export function emptyInput() {
   return {
     l: false, r: false, u: false, d: false,
     pu: false, pd: false,
-    held: { light: false, heavy: false, special: false, skill1: false, skill2: false, ult: false, dash: false, block: false },
-    pressed: { light: false, heavy: false, special: false, skill1: false, skill2: false, ult: false, dash: false, block: false }
+    held: { light: false, heavy: false, special: false, skill1: false, skill2: false, ult: false, dash: false, block: false, taunt: false },
+    pressed: { light: false, heavy: false, special: false, skill1: false, skill2: false, ult: false, dash: false, block: false, taunt: false }
   };
 }

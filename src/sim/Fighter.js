@@ -47,7 +47,8 @@ export class Fighter {
     this.parryUntil = -1; this.parryLock = 0;
     this.dashCd = 0; this.airDash = 1; this.airJump = 1;
     this.dashDir = 1;
-    this.lastWhiff = -999; this.lastParry = -999; this.lastHitTaken = -999;
+    this.lastWhiff = -999; this.lastParry = -999; this.lastHitTaken = -999; this.lastDodge = -999; this.lastWhiffHeavy = false;
+    this.blockRun = 0; this.humReact = null;
     this.lastSpecial = null;
     this.posHist = [];
     this.pose = makePose(POSES.idle);
@@ -96,7 +97,12 @@ export class Fighter {
     const r = this.hasStatus('sigmaGrind'); if (r) m *= 1 + Math.min(0.25, (r.data.stacks || 0) * 0.05);
     return m;
   }
-  defMult() { return this.mult('def'); }
+  defMult() { return this.mult('def') * (this.move && this.move.def.vulnerable && this.move.f > this.move.def.startup ? this.move.def.vulnerable : 1); }
+  // ¿algún rival me está humillando cerca?
+  humiliatorNear() {
+    for (const d of this.b.fighters) if (d.team !== this.team && d.alive && d.move && d.move.def.humAura && Math.abs(d.x - this.x) < 170 * Math.max(1, d.scale)) return true;
+    return false;
+  }
   speedMult() {
     let m = this.mult('speed');
     if (this.b.domainAgainst(this)) m *= 0.75;
@@ -210,6 +216,11 @@ export class Fighter {
     if (a === 'skill1') return this.loadout.skill1;
     if (a === 'skill2') return this.loadout.skill2;
     if (a === 'ult') return this.loadout.ult;
+    if (a === 'taunt') {
+      // la primera humillación equipada cuya condición se cumple; si ninguna, la primera (para avisar)
+      const hs = [this.loadout.hum1, this.loadout.hum2, this.loadout.hum3].filter(id => MOVES[id]);
+      return hs.find(id => this.canUse(MOVES[id], true)) || hs[0] || null;
+    }
     return null;
   }
 
@@ -266,7 +277,7 @@ export class Fighter {
   endMove() {
     const m = this.move;
     if (m) {
-      if (m.def.hit && !m.hit && !m.blocked && !m.def.taunt) { this.lastWhiff = this.b.frame; this.stats.whiffs++; }
+      if (m.def.hit && !m.hit && !m.blocked && !m.def.taunt) { this.lastWhiff = this.b.frame; this.stats.whiffs++; this.lastWhiffHeavy = m.def.weight === 'heavy' || m.def.slot !== 'basic' || (m.def.recovery || 0) >= 18; }
       if (m.def.on && m.def.on.end) m.def.on.end(this, this.b, m);
       if (m.lock) this.b.releaseLock(this, m.lock, true);
     }
@@ -290,6 +301,7 @@ export class Fighter {
     this.posHist.push(this.x); if (this.posHist.length > 60) this.posHist.shift();
 
     this.tickStatus();
+    this.blockRun = this.state === 'block' ? this.blockRun + 1 : 0;
     if (this.alive && this.b.phase === 'fight') this.gainEnergy(0.022);
     if (!this.alive) { this.physics(); this.animate(); return; }
 
@@ -317,6 +329,11 @@ export class Fighter {
       case 'airhit': this.tryBurst(); break;
       case 'knockdown':
         this.vx *= 0.8;
+        if (this.sf >= 8 && (this.input.pressed.light || this.input.pressed.heavy) && this.humiliatorNear()) {
+          // despertar con rabia: solo si te están humillando cerca
+          this.setState('idle'); this.invuln = 10; this.kdTimer = 0;
+          if (this.startMove('wakeRage', { free: true })) { this.b.emit('callout', { f: this, text: '¡DESPIERTA CON RABIA!', color: '#ff4d6d' }); break; }
+        }
         if (--this.kdTimer <= 0) { this.setState('getup'); this.invuln = 22; }
         else if (this.sf === 6 && this.input.held.dash) { this.setState('getup'); this.invuln = 18; this.vx = -this.facing * 6; }
         break;
@@ -496,6 +513,7 @@ export class Fighter {
     if (d.invuln && f >= d.invuln[0] && f <= d.invuln[1]) { this.invuln = Math.max(this.invuln, 1); this.invulnType = d.invulnType || 'all'; }
     if (d.on && d.on.frame) d.on.frame(this, b, m, f);
     if (!this.move || this.move !== m) return; // el hook pudo cambiar el movimiento
+    if (d.humAura && f > 4 && d.id !== 'hum_sigmaNap' && this.input && (this.input.pressed.block || this.input.pressed.dash)) { this.b.emit('humCancel', { f: this }); this.endMove(); return; }
     if (d.proj && (Array.isArray(d.proj.at) ? d.proj.at.includes(f) : f === d.proj.at)) b.spawnMoveProjectile(this, d, m);
     if (f === d.startup && d.on && d.on.active) d.on.active(this, b, m);
     if (!this.move || this.move !== m) return;
@@ -743,6 +761,7 @@ export class Fighter {
         copyPose(this.kdFace ? POSES.lyingFace : POSES.lying, out);
         if (this.sf < 6) out.hip[1] -= (6 - this.sf) * 2.5; // rebote al caer
         if (this.sf > 20) out.face = 'hurt';
+        if (this.humReact && this.humReact.until > this.b.frame) { out.face = this.humReact.face; out.head += Math.sin(this.b.frame * 0.9) * 4; }
         return 'kd';
       }
       case 'getup': {
@@ -849,13 +868,18 @@ export class Fighter {
     if (m.lock && m.lock.spec.hands) return m.lock.spec.hands(this, m.lock.target, m.lock.f, this.b);
     const cs = m.def.contacts;
     if (!cs) return null;
-    const t = this.target;
-    if (!t || !t.alive) return null;
+    // objetivo: el rival del movimiento (o la víctima fijada por una humillación) o el propio cuerpo
+    const t = m.data && m.data.victim ? m.data.victim : this.target;
     let out = null;
     for (const c of cs) {
       if (m.f < c.from || m.f > c.to) continue;
       if (c.onHit && !m.hit) continue;
-      const pt = contactPoint(t, c.at, this.facing);
+      let pt;
+      if (c.self) pt = selfPoint(this, c.self);
+      else {
+        if (!t || !t.alive || (c.victim && t.state !== 'knockdown')) continue;
+        pt = contactPoint(t, c.at, this.facing);
+      }
       if (!pt) continue;
       const reach = (BONES.upper + BONES.fore) * this.scale * 1.08;
       if (Math.hypot(pt[0] - this.joints.shX, pt[1] - this.joints.shY) > reach) continue;
@@ -913,6 +937,20 @@ const _ovr = { hands: { n: null, f: null }, feet: { n: null, f: null } };
 function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
 // Punto del cuerpo del rival para contactos (en coordenadas de mundo)
+// puntos del propio cuerpo para gestos (sacudirse el hombro, mirar el reloj, aplaudir, atarse la zapatilla)
+export function selfPoint(f, kind) {
+  const j = f.joints, s = f.scale, d = f.facing;
+  switch (kind) {
+    case 'fShoulder': return [j.shX + d * 2 * s, j.shY + 4 * s];
+    case 'fWrist': return [j.fHandX - d * 4 * s, j.fHandY - 2 * s];
+    case 'clap': return [j.shX + d * 24 * s, j.shY + 14 * s];
+    case 'mouth': return [j.headX + d * j.headR * 0.95, j.headY + j.headR * 0.4];
+    case 'nFoot': return [j.nFootX + d * 5 * s, j.nFootY - 7 * s];
+    case 'nFoot2': return [j.nFootX - d * 3 * s, j.nFootY - 9 * s];
+    default: return null;
+  }
+}
+
 export function contactPoint(t, at, facing) {
   const j = t.joints;
   const s = t.scale;
@@ -926,6 +964,9 @@ export function contactPoint(t, at, facing) {
     case 'nHand': return [j.nHandX, j.nHandY];
     case 'fHand': return [j.fHandX, j.fHandY];
     case 'knee': return [j.nKneeX, j.nKneeY];
+    // cuerpo tumbado: parte de arriba de la cabeza y del torso (palmaditas)
+    case 'headTop': return [j.headX, j.headY - j.headR * 0.95];
+    case 'torsoUp': { const mx = (j.neckX + j.hipX) / 2, my = (j.neckY + j.hipY) / 2; return [mx, my - 9 * s]; }
     default: return null;
   }
 }

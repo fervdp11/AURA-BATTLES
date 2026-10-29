@@ -1,6 +1,7 @@
 // Definición de todos los movimientos. Cada técnica tiene animación propia, reglas de impacto
 // y formas de ser esquivada o contrarrestada. Frames a 60 Hz. Daño sobre 1000 de aura.
 import { GROUND_Y, WALL_L, WALL_R } from './constants.js';
+import { humMoveDefs, HUM_IDS } from './humiliations.js';
 
 export const MOVES = {};
 
@@ -353,7 +354,8 @@ def('noReaction', {
       else { if (a.move && a.move.lock) b.releaseLock(a, a.move.lock, true); a.move = null; a.addStatus('dizzy', 24, {}, d); }
       b.drain(d, a, 55, 'NO REACTION', '#dddddd');
       d.flash = 4;
-      d.move.f = 51;
+      // el golpe pudo terminar el combate y lanzar un remate: solo se avanza si sigue en No Reaction
+      if (d.move && d.move.def.id === 'noReaction') d.move.f = 51;
       return true;
     }
   },
@@ -1853,9 +1855,13 @@ for (const m of Object.values(MOVES)) {
   else if (has('clap')) m.contacts = [{ hand: 'n', at: 'face', from: m.startup, to: end, onHit: true }];
 }
 
+// Humillaciones de Aura (recuperan aura propia, nunca dañan) y el despertar con rabia
+for (const [id, d] of Object.entries(humMoveDefs())) def(id, d);
+
 export const BASIC_IDS = Object.values(MOVES).filter(m => m.slot === 'basic').map(m => m.id);
 export const SPECIAL_IDS = Object.values(MOVES).filter(m => m.slot === 'special').map(m => m.id);
 export const ULT_IDS = Object.values(MOVES).filter(m => m.slot === 'ult').map(m => m.id);
+export const AURA_IDS = HUM_IDS.slice();
 
 for (const m of Object.values(MOVES)) {
   m.total = total(m);

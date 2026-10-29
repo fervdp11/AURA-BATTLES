@@ -141,6 +141,14 @@ const POOLS = {
   balanced: { sp: ['fakeGreeting', 'tralalero', 'sixSevenSlam', 'sixSeven', 'fakeHandshake', 'siuuu', 'rizz', 'mewing', 'sigmaStare', 'unoReverse', 'sigmaTeleport', 'hitTheWoah', 'phantomDap', 'auraWalk', 'bonk', 'nahIdWin', 'clapBack'], ult: ['sixSevenBarrage', 'finalAuraJudgment', 'sigmaRule', 'ultimateNonchalance'] }
 };
 
+// humillaciones de aura según la personalidad del bot
+const HUM_BY_STYLE = {
+  showboat: ['hum_goodBoy', 'hum_selfie', 'hum_slowClap'], chill: ['hum_sigmaNap', 'hum_yawn', 'hum_tieShoe'],
+  counter: ['hum_thumbsUp', 'hum_dustOff', 'hum_checkWatch'], rushdown: ['hum_goodBoy', 'hum_consolePat', 'hum_dustOff'],
+  zoner: ['hum_tieShoe', 'hum_slowClap', 'hum_checkWatch'], trickster: ['hum_selfie', 'hum_dustOff', 'hum_slowClap'],
+  grappler: ['hum_consolePat', 'hum_goodBoy', 'hum_thumbsUp'], balanced: ['hum_goodBoy', 'hum_thumbsUp', 'hum_checkWatch']
+};
+
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 function maxTier(level) { return [1, 2, 3, 4, 5, 6, 6][level] ?? 6; }
@@ -162,7 +170,8 @@ function buildLoadout(name, style, level) {
   }
   const ults = pool.ult.filter(id => tierOf(id) <= maxTier(level) + 1);
   const ult = (ults.length ? ults : ['sixSevenBarrage', 'rizzStorm'])[h % (ults.length || 2)];
-  return { special: pick[0], specialF: pick[1], specialD: pick[2], skill1: pick[3], skill2: pick[4], ult };
+  const hums = HUM_BY_STYLE[style] || HUM_BY_STYLE.balanced;
+  return { special: pick[0], specialF: pick[1], specialD: pick[2], skill1: pick[3], skill2: pick[4], ult, hum1: hums[0], hum2: hums[1], hum3: hums[2] };
 }
 
 function make(r, i, boss) {

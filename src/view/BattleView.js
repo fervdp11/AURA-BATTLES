@@ -532,6 +532,15 @@ export class BattleView {
         fx.text(f.x, f.y - (e.small ? 200 : 230) * f.scale, e.text, { color: e.color || '#fff', size: e.small ? 22 : 34, hold: e.small ? 350 : 700 });
         break;
       }
+      case 'auraRecover': {
+        // humillación de aura: el humillador recupera aura (nunca daña); número verde y destellos de su color
+        const f = e.f, col = this.lookFor(f).aura;
+        if (e.amount > 0) fx.text(f.x + f.facing * 20, f.y - 175 * f.scale, '+' + e.amount + ' AURA', { color: '#7bd389', size: 22, hold: 260, rise: 40 });
+        if (e.text) { fx.text(f.x, f.y - 240 * f.scale, e.text, { color: '#7bd389', size: 30, hold: 650 }); this.sfx('rizzChime', { gain: 0.6 }); this.arena.react('cheer', 0.5); }
+        fx.motes(f.joints.headX, f.joints.headY, col, 4, 26);
+        break;
+      }
+      case 'humCancel': fx.dust(e.f.x, e.f.y, 4); break;
       case 'humiliate': {
         const f = e.f;
         fx.text(f.x, f.y - 250 * f.scale, e.text, { color: e.color || '#ff66cc', size: 40, hold: 900 });
@@ -702,6 +711,16 @@ export class BattleView {
     const f = e.f;
     const look = f ? this.lookFor(f) : null;
     switch (e.name) {
+      case 'pat': this.sfxAt('pat', e.x, { pitch: e.soft ? 0.85 : 1.1 }); fx.motes(e.x, e.y, 0xffd166, 2, 8); if (!e.soft) fx.emit('heart', e.x, e.y - 14, 1, 0xff79c6); if (e.victim) e.victim.squashY = 0.94; break;
+      case 'dust': this.sfxAt('swish', e.x, { pitch: 1.4, gain: 0.6 }); fx.dust(e.x, e.y, 6, 0xd8d0c0, f.facing, 0.6); break;
+      case 'humMiss': fx.text(f.x, f.y - 210 * f.scale, '¿EH?', { color: '#c9c3e6', size: 24, hold: 300 }); this.sfx('deny'); break;
+      case 'zzz': fx.text(f.joints.headX + 20, f.joints.headY - 20, 'Z', { color: '#c084fc', size: 26, hold: 200, rise: 50 }); this.sfx('bubbles', { gain: 0.4 }); break;
+      case 'tick': this.sfxAt('tick', e.x); this.scene.time.delayedCall(260, () => this.sfxAt('tick', e.x, { pitch: 0.9 })); fx.ring(e.x, e.y, 0xffe066, 0.3, 300); break;
+      case 'clap': this.sfxAt('clap1', e.x, { pitch: 0.95 + Math.random() * 0.1 }); fx.sparks(e.x, e.y, 4, 0xffffff, 3); break;
+      case 'thumb': this.sfx('sparkle'); fx.emit('star', e.x, e.y, 3, 0x7bd389); fx.flash(e.x, e.y, 0x7bd389, 0.6, 200); break;
+      case 'stretch': this.sfx('swish', { pitch: 0.6 }); break;
+      case 'laces': this.sfxAt('zip', e.x); break;
+      case 'selfie': this.sfxAt('shutter', e.x); fx.flash(e.x, e.y, 0xffffff, 2.2, 260); break;
       case 'sixseven': fx.motes(e.alt ? f.joints.fHandX : f.joints.nHandX, e.alt ? f.joints.fHandY : f.joints.nHandY, 0xffd166, 2, 10); break;
       case 'snapBeat': {
         const hx = e.i % 2 ? f.joints.nHandX : f.joints.fHandX, hy = e.i % 2 ? f.joints.nHandY : f.joints.fHandY;

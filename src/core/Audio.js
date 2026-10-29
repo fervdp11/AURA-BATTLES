@@ -299,6 +299,10 @@ const SFX = {
   musicBox(t) { [1046, 1318, 1568, 2093, 1568, 1318].forEach((f, i) => { this.osc('sine', f, f, t + i * 0.11, 0.5, 0.08, null, { rev: 0.6 }); this.osc('sine', f * 2.01, f * 2.01, t + i * 0.11, 0.2, 0.025); }); },
   pirouette(t) { this.noise(t, 0.45, 0.25, 'bandpass', 800, 4000, null, { q: 3, attack: 0.2 }); [1568, 2093].forEach((f, i) => this.osc('sine', f, f, t + 0.2 + i * 0.08, 0.3, 0.06, null, { rev: 0.5 })); },
   fingerSnap(t, p) { this.noise(t, 0.018, 0.9, 'highpass', 3500 * p); this.noise(t, 0.05, 0.3, 'bandpass', 2200 * p, null, null, { q: 5, rev: 0.4 }); },
+  // humillaciones de aura (sin voces): palmadita sorda, aplauso suelto y cremallera de cordones
+  pat(t, p) { this.noise(t, 0.05, 0.32, 'lowpass', 900 * p, 300, null, { rev: 0.1 }); this.osc('sine', 150 * p, 90, t, 0.07, 0.3); },
+  clap1(t, p) { this.noise(t, 0.06, 0.45, 'bandpass', 1500 * p, null, null, { q: 1.8, rev: 0.35 }); this.noise(t + 0.008, 0.04, 0.2, 'highpass', 3500); },
+  zip(t, p) { for (let i = 0; i < 6; i++) this.noise(t + i * 0.018, 0.014, 0.18, 'bandpass', 2400 * p + i * 300, null, null, { q: 4 }); },
   swish(t, p) { this.noise(t, 0.2, 0.18, 'bandpass', 900 * p, 2400 * p, null, { q: 1.2, attack: 0.05 }); },
   kissPop(t) { this.osc('sine', 600, 1800, t, 0.05, 0.25); this.noise(t, 0.02, 0.4, 'highpass', 3000); },
   rizzChime(t) { [784, 988, 1175].forEach((f, i) => this.osc('triangle', f, f, t + i * 0.05, 0.4, 0.07, null, { rev: 0.6 })); },

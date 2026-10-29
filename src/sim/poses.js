@@ -2,6 +2,7 @@
 // Referencias respecto al hombro (escala 1): barbilla [7,-14], boca [9,-20], ojos [9,-30], frente [6,-40],
 // coronilla [0,-46], pecho [8,14], barriga [6,32], cadera [0,48]. Alcance máximo del brazo: 60.
 import { makePose, lerpPose, copyPose, ease } from './skeleton.js';
+import { HUM_POSES } from './humiliations.js';
 
 const P = o => makePose(o);
 const UP = [-0.6, -1], OUT = [1, 0.2], DOWN = [-0.25, 1], BACK = [-1, 0.3], FWD = [1, 0.4];
@@ -192,6 +193,8 @@ export function pose(name) { return POSES[name] || POSES.idle; }
 
 // ---------- modificadores procedurales (mutan una pose según el frame) ----------
 const S = Math.sin, C = Math.cos;
+Object.assign(POSES, HUM_POSES);
+
 export const MODS = {
   breathe(p, f) { const s = S(f * 0.07); p.hip[1] += s * 1.2; p.hn[1] -= s * 1.5; p.hf[1] -= s * 1.5; p.lean += s * 0.6; },
   sixseven(p, f) {

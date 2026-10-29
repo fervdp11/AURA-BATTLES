@@ -7,7 +7,7 @@ function defaults() {
   return {
     version: 1,
     profile: { name: 'TÚ', color: '#f4f4f8', accent: '#ffd166', aura: '#7df9ff', accessory: 'cap', celebration: 'flex', title: 'novato' },
-    loadout: { special: 'sixSeven', specialF: 'fakeHandshake', specialD: 'siuuu', skill1: 'mewing', skill2: 'rizz', ult: 'sixSevenBarrage' },
+    loadout: { special: 'sixSeven', specialF: 'fakeHandshake', specialD: 'siuuu', skill1: 'mewing', skill2: 'rizz', ult: 'sixSevenBarrage', hum1: 'hum_goodBoy', hum2: 'hum_dustOff', hum3: 'hum_thumbsUp' },
     unlockedMoves: [...STARTER_MOVES],
     finisher: 'kickSpace', unlockedFinishers: ['kickSpace', 'pantsDown'],
     ap: 300, rankPoints: 0, prestige: 0,
@@ -37,6 +37,8 @@ class SaveManager {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) this.data = merge(defaults(), JSON.parse(raw));
+      // movimientos iniciales añadidos en versiones nuevas (p.ej. humillaciones de aura): se conceden sin tocar lo comprado
+      for (const id of STARTER_MOVES) if (!this.data.unlockedMoves.includes(id)) this.data.unlockedMoves.push(id);
     } catch (e) { this.data = defaults(); }
     return this.data;
   }

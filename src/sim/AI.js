@@ -52,6 +52,19 @@ export class AIController {
     this.comboStep = 0;
     this.chainTimer = 0;
     this.panic = 0;
+    // humillaciones de aura: confianza propia (baja si le castigan) y lectura de las del rival
+    this.humTrust = 1; this.humActive = false; this.oppHums = 0; this.lastOppHum = null;
+  }
+
+  // aprende: si le castigan mientras se humilla confía menos; si sale bien, más. Cuenta las del rival.
+  learnHumiliations(f, o) {
+    if (f.move && f.move.def.humAura) this.humActive = true;
+    else if (this.humActive) {
+      this.humActive = false;
+      if (f.state === 'hitstun' || f.state === 'airhit' || f.state === 'knockdown') this.humTrust = Math.max(0.2, this.humTrust * 0.55);
+      else this.humTrust = Math.min(1.5, this.humTrust + 0.1);
+    }
+    if (o.move && MOVES[o.move] && MOVES[o.move].humAura && this.lastOppHum !== o.move + ':' + Math.floor(this.b.frame / 120)) { this.lastOppHum = o.move + ':' + Math.floor(this.b.frame / 120); this.oppHums++; }
   }
 
   rollReaction() { const [a, b] = this.L.reaction; return Math.round(a + this.r() * (b - a)); }
@@ -79,7 +92,12 @@ export class AIController {
 
     if (f.state === 'locked' || f.state === 'ko' || f.state === 'win' || f.state === 'intro') return inp;
     if (f.state === 'hitstun' || f.state === 'airhit') { this.tryBurst(inp); return inp; }
-    if (f.state === 'knockdown') { if (this.chance(this.L.tech * 0.25)) inp.held.dash = true; return inp; }
+    this.learnHumiliations(f, o);
+    if (f.state === 'knockdown') {
+      // le humillan al lado: despierta con rabia (más probable cuanto más lo haya visto)
+      if (f.sf >= 8 && f.humiliatorNear() && this.chance(0.08 + this.L.punish * 0.35 + Math.min(0.35, this.oppHums * 0.07))) { this.press(inp, 'heavy'); return inp; }
+      if (this.chance(this.L.tech * 0.25)) inp.held.dash = true; return inp;
+    }
     if (f.controlStatus()) return inp;
 
     if (f.state === 'attack') { this.comboLogic(inp); this.applyHolds(inp); return inp; }
@@ -427,6 +445,26 @@ export class AIController {
         if (!best) best = dist < 95 ? 'jab' : dist < 130 ? 'roundhouse' : dist < 230 ? 'lunge' : null;
         if (best) { add(6, () => this.useMove(inp, best), 'punish'); }
         else if (dist < 400) add(3, () => this.press(inp, 'dash', { fwd: true }), 'dashPunish');
+      }
+    }
+    // humillaciones de aura (recuperan aura propia): solo con la condición cumplida y riesgo asumible
+    {
+      const lo = f.loadout;
+      const ready = [lo.hum1, lo.hum2, lo.hum3].filter(id => MOVES[id] && f.canUse(MOVES[id], true));
+      if (ready.length && token) {
+        const id = ready[0], d = MOVES[id];
+        const firstContact = d.startup + 4;
+        const safe = opp.state === 'knockdown' ? opp.kdTimer > firstContact + (this.level >= 4 ? 6 : 0) : (o.phase === 'recovery' || dist > 300 || opp.state === 'block');
+        const showy = this.style === 'showboat' ? 2.2 : this.style === 'chill' ? 1.5 : 1;
+        // las de suelo son la oportunidad clara; las demás, de vez en cuando (no las spamea)
+        const ground = opp.state === 'knockdown';
+        if ((safe || this.chance(L.mistake)) && (ground || this.chance(0.35))) add((ground ? 3 : 1.6) * showy * this.humTrust * (hp < 0.5 ? 1.5 : 1), () => this.press(inp, 'taunt'), 'auraHum');
+      }
+      // el rival se está humillando: castigo prioritario
+      if (o.move && MOVES[o.move] && MOVES[o.move].humAura && this.chance(0.3 + L.punish * 0.7)) {
+        const best = dist < 95 ? 'jab' : dist < 135 ? 'roundhouse' : dist < 240 ? 'lunge' : null;
+        if (best) add(8, () => this.useMove(inp, best), 'punishHum');
+        else if (dist < 520) add(5, () => this.press(inp, 'dash', { fwd: true }), 'dashHum');
       }
     }
     // humillar si está en el suelo

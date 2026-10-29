@@ -101,7 +101,9 @@ export class HUDScene extends Phaser.Scene {
       s.cost = txt(this, s.x + W - 6, 661, String((MOVES[s.id] || {}).cost || 0), 13, '#7df9ff', { ox: 1, oy: 0.5, body: true });
       if (s.name.width > W - 8) s.name.setScale((W - 8) / s.name.width);
     });
-    return { f, slots, col: side === 'left' ? SIDE_COL[0] : SIDE_COL[1] };
+    // aviso de humillación de aura disponible (se ilumina solo cuando su condición se cumple)
+    const humT = txt(this, side === 'left' ? 24 : 1256, 626, '', 15, '#0b1a10', { ox: side === 'left' ? 0 : 1, oy: 0.5, body: true, bold: true }).setDepth(31);
+    return { f, slots, col: side === 'left' ? SIDE_COL[0] : SIDE_COL[1], humT, humKey: k('taunt'), side, humA: 0 };
   }
 
   startTutorial() {
@@ -358,6 +360,18 @@ export class HUDScene extends Phaser.Scene {
 
   drawSlots(g, bar) {
     const f = bar.f, b = this.b;
+    if (bar.humT) {
+      const lo = f.loadout;
+      const avail = f.alive && b.phase === 'fight' && !f.move ? [lo.hum1, lo.hum2, lo.hum3].find(id => MOVES[id] && f.canUse(MOVES[id], true)) : null;
+      bar.humA += ((avail ? 1 : 0) - bar.humA) * 0.25;
+      if (avail) bar.humT.setText(`${bar.humKey}  ·  ${MOVES[avail].name.toUpperCase()}`);
+      bar.humT.setAlpha(bar.humA);
+      if (bar.humA > 0.02) {
+        const w = bar.humT.width + 22, x = bar.side === 'left' ? 14 : 1266 - w, pulse = 0.85 + Math.sin(b.frame * 0.25) * 0.15;
+        g.fillStyle(0x7bd389, 0.9 * bar.humA * pulse); g.fillRoundedRect(x, 614, w, 24, 12);
+        g.lineStyle(2, 0xffffff, 0.6 * bar.humA); g.strokeRoundedRect(x, 614, w, 24, 12);
+      }
+    }
     for (const s of bar.slots) {
       const m = MOVES[s.id]; if (!m) continue;
       const cd = f.cool[s.id] || 0;

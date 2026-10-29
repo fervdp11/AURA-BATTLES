@@ -556,6 +556,7 @@ export class Battle {
 
   onDodge(d, a, hit, src) {
     d.stats.dodges++;
+    d.lastDodge = this.frame;
     this.emit('dodge', { f: d, a });
     if (d.state === 'attack' && d.move && d.move.def.on && d.move.def.on.dodge) d.move.def.on.dodge(d, this, d.move, a, src);
   }

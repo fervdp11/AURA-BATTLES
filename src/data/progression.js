@@ -42,7 +42,8 @@ export function matchRewards({ win, level, mode, enemies = 1, perfect, maxCombo 
   }
   const cb = Math.min(60, maxCombo * 2);
   if (cb) items.push({ label: `Combo máximo x${maxCombo}`, ap: cb });
-  if (humiliations) items.push({ label: `Humillaciones (${humiliations})`, ap: humiliations * 5 });
+  // tope de humillaciones pagadas por partida (evita farmear AP)
+  if (humiliations) items.push({ label: `Humillaciones (${humiliations})`, ap: Math.min(12, humiliations) * 5 });
   let ap = items.reduce((a, it) => a + it.ap, 0);
   if (prestige) { const b = Math.round(ap * prestige * 0.1); items.push({ label: `Bonus de prestigio ${prestige}`, ap: b }); ap += b; }
   if (replay && win) { const c = -Math.round(ap * 0.5); penalties.push({ label: 'Combate ya superado (-50%)', ap: c }); ap += c; }
@@ -67,7 +68,7 @@ export function farmFactor(recent, now = Date.now()) {
 }
 
 // Movimientos iniciales; el resto se compran con Aura (AP) y algunos exigen rango
-export const STARTER_MOVES = ['sixSeven', 'fakeHandshake', 'siuuu', 'mewing', 'rizz', 'sixSevenBarrage', 'hitTheWoah', 'sideEye', 'broReallyThought', 'chillGuy', 'invisibleDap', 'griddy', 'lBozo', 'bonk'];
+export const STARTER_MOVES = ['sixSeven', 'fakeHandshake', 'siuuu', 'mewing', 'rizz', 'sixSevenBarrage', 'hitTheWoah', 'sideEye', 'broReallyThought', 'chillGuy', 'invisibleDap', 'griddy', 'lBozo', 'bonk', 'hum_goodBoy', 'hum_dustOff', 'hum_thumbsUp'];
 
 // tier: [partidas medias que cuesta, rango mínimo (índice), rareza]
 const TIER_OF = {
@@ -81,6 +82,10 @@ const MOVE_TIERS = {
   5: ['mainCharacterEnding', 'infiniteMewing', 'bigBrain', 'oraBarrage', 'omaeWaMou', 'falconPunch', 'rickroll', 'rageQuit', 'bombardiro', 'spidermanPoint', 'perfectlyBalanced', 'coffinDance', 'timeStop'],
   6: ['finalAuraJudgment', 'domainExpansion', 'auraOverload']
 };
+// humillaciones de aura a la venta (las tres iniciales son gratis)
+MOVE_TIERS[2].push('hum_consolePat', 'hum_checkWatch', 'hum_slowClap');
+MOVE_TIERS[3].push('hum_yawn', 'hum_selfie');
+MOVE_TIERS[4].push('hum_tieShoe', 'hum_sigmaNap');
 export const MOVE_SHOP = {};
 for (const t in MOVE_TIERS) for (const id of MOVE_TIERS[t]) if (MOVES[id] && !STARTER_MOVES.includes(id)) MOVE_SHOP[id] = { price: priceMatches(TIER_OF[t][0] * (MOVES[id].slot === 'ult' ? 1.4 : 1)), rank: TIER_OF[t][1], tier: +t, rarity: TIER_OF[t][2] };
 // cualquier especial no listado

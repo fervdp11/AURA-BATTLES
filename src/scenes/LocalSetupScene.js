@@ -6,13 +6,13 @@ import { txt, StickPreview, MenuBG, go, fadeIn } from '../ui/UI.js';
 import { playerProfile, botProfile } from '../core/Match.js';
 import { BOTS, BOSSES } from '../data/bots.js';
 import { BODY_COLORS, AURA_COLORS } from '../data/progression.js';
-import { MOVES, SPECIAL_IDS, ULT_IDS, FINISHERS } from '../sim/moves.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS, AURA_IDS, FINISHERS } from '../sim/moves.js';
 import { ARENAS } from '../view/Arena.js';
 import { hex } from '../view/StickRenderer.js';
 
 // Multijugador local 1v1: cada jugador elige personaje, colores y técnicas con SUS teclas a la vez.
 const PCOL = [0x7df9ff, 0xff5fa2], PCSS = ['#7df9ff', '#ff5fa2'], PROF = ['p1', 'p2'];
-const SLOTS = [['special', 'ESPECIAL'], ['specialF', 'ESPECIAL →'], ['specialD', 'ESPECIAL ↓'], ['skill1', 'HABILIDAD 1'], ['skill2', 'HABILIDAD 2'], ['ult', 'ULTIMATE']];
+const SLOTS = [['special', 'ESPECIAL'], ['specialF', 'ESPECIAL →'], ['specialD', 'ESPECIAL ↓'], ['skill1', 'HABILIDAD 1'], ['skill2', 'HABILIDAD 2'], ['ult', 'ULTIMATE'], ['hum1', 'HUMILLACIÓN 1'], ['hum2', 'HUMILLACIÓN 2'], ['hum3', 'HUMILLACIÓN 3']];
 const ROUNDS = [1, 2, 3], TIMES = [60, 99, 0];
 const AURAS = AURA_COLORS.map(a => a.c).filter(c => c !== 'rainbow');
 
@@ -56,7 +56,7 @@ export class LocalSetupScene extends Phaser.Scene {
     const p = { i, ci, ready: false, cur: 0, curY: 0, bump: 0,
       color: s.color || c.profile.color, accent: s.accent || c.profile.accent, aura: s.aura || c.profile.aura,
       finisher: s.finisher && (FINISHERS[s.finisher] || s.finisher === 'none') ? s.finisher : i === 0 ? 'kickSpace' : 'pantsDown',
-      loadout: s.loadout && SLOTS.every(([k]) => MOVES[s.loadout[k]]) ? { ...s.loadout } : { ...c.loadout } };
+      loadout: s.loadout && SLOTS.slice(0, 6).every(([k]) => MOVES[s.loadout[k]]) ? { ...c.loadout, ...s.loadout, ...(SLOTS.slice(6).every(([k]) => MOVES[s.loadout[k]]) ? {} : { hum1: c.loadout.hum1 || 'hum_goodBoy', hum2: c.loadout.hum2 || 'hum_dustOff', hum3: c.loadout.hum3 || 'hum_thumbsUp' }) } : { ...c.loadout } };
     return p;
   }
   profileOf(p) {
@@ -95,10 +95,10 @@ export class LocalSetupScene extends Phaser.Scene {
     p.head = txt(this, x0 + 20, 100, 'JUGADOR ' + (i + 1), 30, PCSS[i]);
     p.readyT = txt(this, x0 + 580, 104, '', 22, '#7bd389', { ox: 1 });
     p.labels = []; p.values = [];
-    for (let r = 0; r < 16; r++) {
+    for (let r = 0; r < 20; r++) {
       p.labels.push(txt(this, 0, 0, '', 16, '#c9c3e6', { oy: 0.5, body: true, bold: true }).setDepth(10));
       p.values.push(txt(this, 0, 0, '', 17, '#ffffff', { ox: 0.5, oy: 0.5 }).setDepth(10));
-      const zone = this.add.zone(x0 + 250, 146 + r * 29, 330, 29).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(12);
+      const zone = this.add.zone(x0 + 250, 140 + r * 24, 330, 24).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(12);
       zone.on('pointerdown', ptr => { const rs = this.rows(p); if (r >= rs.length) return; p.cur = r; this.act(p, ptr.x < x0 + 415 ? 'left' : 'right', true); });
     }
     const k = a => keyName(Input.codesFor(a, PROF[i])[0]);
@@ -148,7 +148,7 @@ export class LocalSetupScene extends Phaser.Scene {
       case 'accent': p.accent = cyc(BODY_COLORS, p.accent); break;
       case 'aura': p.aura = cyc(AURAS, p.aura); break;
       case 'slot': {
-        const pool = row.slot === 'ult' ? ULT_IDS : SPECIAL_IDS;
+        const pool = row.slot === 'ult' ? ULT_IDS : row.slot.startsWith('hum') ? AURA_IDS : SPECIAL_IDS;
         const used = Object.entries(p.loadout).filter(([k]) => k !== row.slot).map(([, v]) => v);
         let i = pool.indexOf(p.loadout[row.slot]);
         for (let n = 0; n < pool.length; n++) { i = (i + d + pool.length) % pool.length; if (!used.includes(pool[i])) break; }
@@ -207,14 +207,14 @@ export class LocalSetupScene extends Phaser.Scene {
       g.fillStyle(col, 0.12); g.fillEllipse(x0 + 128, 600, 180, 22);
       p.curY += (p.cur - p.curY) * 0.3;
       p.bump *= 0.8;
-      const ry = r => 146 + r * 29;
-      g.fillStyle(col, 0.2); g.fillRoundedRect(x0 + 246, ry(p.curY) - 1, 342, 30, 8);
-      g.fillStyle(col, 1); g.fillRect(x0 + 246, ry(p.curY) + 3, 4, 22);
+      const ry = r => 140 + r * 24;
+      g.fillStyle(col, 0.2); g.fillRoundedRect(x0 + 246, ry(p.curY) - 1, 342, 25, 7);
+      g.fillStyle(col, 1); g.fillRect(x0 + 246, ry(p.curY) + 3, 4, 18);
       for (let r = 0; r < p.labels.length; r++) {
         const row = rows[r], L = p.labels[r], V = p.values[r];
         if (!row) { L.setVisible(false); V.setVisible(false); continue; }
         L.setVisible(true); V.setVisible(true);
-        const sel = r === p.cur, y = ry(r) + 14;
+        const sel = r === p.cur, y = ry(r) + 12;
         L.setText(row.label).setPosition(x0 + 258, y).setColor(row.k === 'ready' ? (p.ready ? '#7bd389' : '#ffd166') : sel ? '#ffffff' : '#9a94b8');
         const v = row.value();
         const arrows = sel && !['ready', 'controls'].includes(row.k) && !p.ready;
@@ -224,7 +224,7 @@ export class LocalSetupScene extends Phaser.Scene {
       }
       p.readyT.setText(p.ready ? '✓ LISTO' : '').setColor('#7bd389');
       const k = a => keyName(Input.codesFor(a, PROF[p.i])[0]);
-      p.keys.setText(`${k('light')} rápido · ${k('heavy')} fuerte · ${k('special')} especial\n${k('skill1')} hab.1 · ${k('skill2')} hab.2 · ${k('ult')} ulti\n${k('dash')} dash · ${k('block')} bloqueo`);
+      p.keys.setText(`${k('light')} rápido · ${k('heavy')} fuerte · ${k('special')} especial\n${k('skill1')} hab.1 · ${k('skill2')} hab.2 · ${k('ult')} ulti\n${k('dash')} dash · ${k('block')} bloqueo · ${k('taunt')} humillación`);
       p.prev.update();
     }
     this.rulesTxt.setText(`REGLAS: ${ROUNDS[this.rules.rounds] === 1 ? '1 RONDA' : 'AL MEJOR DE ' + (ROUNDS[this.rules.rounds] * 2 - 1)}  ·  TIEMPO ${TIMES[this.rules.time] ? TIMES[this.rules.time] + ' s' : '∞'}  ·  ${this.rules.arena === 0 ? 'ESCENARIO ALEATORIO' : ARENAS[this.rules.arena - 1].name.toUpperCase()}   ·   ESC volver`);

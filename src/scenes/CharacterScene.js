@@ -3,13 +3,13 @@ import { Save } from '../core/Save.js';
 import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { txt, panel, MenuList, StickPreview, go, fadeIn, keyHints, toast } from '../ui/UI.js';
-import { MOVES, SPECIAL_IDS, ULT_IDS , FINISHERS } from '../sim/moves.js';
+import { MOVES, SPECIAL_IDS, ULT_IDS, AURA_IDS, FINISHERS } from '../sim/moves.js';
 import { CELEBRATION_LIST, CELEBRATION_REQ, TITLES, MOVE_SHOP, RANKS, reqMet, reqText, rankFor } from '../data/progression.js';
 import { CELEBRATIONS } from '../sim/celebrations.js';
 import { RARITY } from '../data/cosmetics.js';
 import { playerProfile } from '../core/Match.js';
 
-const SLOTS = [['special', 'ESPECIAL (C)'], ['specialF', '→ + ESPECIAL'], ['specialD', '↓ + ESPECIAL'], ['skill1', 'HABILIDAD 1 (A)'], ['skill2', 'HABILIDAD 2 (S)'], ['ult', 'ULTIMATE (D)']];
+const SLOTS = [['special', 'ESPECIAL (C)'], ['specialF', '→ + ESPECIAL'], ['specialD', '↓ + ESPECIAL'], ['skill1', 'HABILIDAD 1 (A)'], ['skill2', 'HABILIDAD 2 (S)'], ['ult', 'ULTIMATE (D)'], ['hum1', 'HUMILLACIÓN 1'], ['hum2', 'HUMILLACIÓN 2'], ['hum3', 'HUMILLACIÓN 3']];
 
 export class CharacterScene extends Phaser.Scene {
   constructor() { super('Character'); }
@@ -68,13 +68,13 @@ export class CharacterScene extends Phaser.Scene {
   moveInfo(m) {
     if (!m) { this.descT.setText(''); return; }
     const h = m.hit || {};
-    this.descT.setText(`${m.name.toUpperCase()}  ·  ${m.cost || 0} energía${m.cd ? ' · recarga ' + (m.cd / 60).toFixed(1) + 's' : ''}\n${m.desc || ''}${h.dmg ? '\nDaño ' + h.dmg : ''}${m.tip ? '\nContra: ' + m.tip : ''}`);
+    this.descT.setText(`${m.name.toUpperCase()}  ·  ${m.humAura ? 'HUMILLACIÓN DE AURA' : (m.cost || 0) + ' energía'}${m.cd ? ' · recarga ' + (m.cd / 60).toFixed(1) + 's' : ''}\n${m.desc || ''}${m.when ? '\nCuándo: ' + m.when : ''}${h.dmg ? '\nDaño ' + h.dmg : ''}${m.tip ? '\nContra: ' + m.tip : ''}`);
     const pose = m.anim && m.anim[Math.min(1, m.anim.length - 1)];
     this.prev.setAnim(pose && typeof pose[1] === 'string' ? pose[1] : 'guard');
   }
   pickMove(slot) {
     const d = Save.d;
-    const pool = (slot === 'ult' ? ULT_IDS : SPECIAL_IDS).filter(id => d.unlockedMoves.includes(id));
+    const pool = (slot === 'ult' ? ULT_IDS : slot.startsWith('hum') ? AURA_IDS : SPECIAL_IDS).filter(id => d.unlockedMoves.includes(id));
     const equipped = Object.values(d.loadout);
     this.setMenu([
       ...pool.map(id => ({ label: MOVES[id].name, value: () => (d.loadout[slot] === id ? 'EQUIPADA' : equipped.includes(id) ? 'en uso' : ''), m: MOVES[id], onSelect: () => {
