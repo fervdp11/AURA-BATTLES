@@ -22,6 +22,7 @@ export class MenuScene extends Phaser.Scene {
     txt(this, 76, 140, 'El aura es tu vida. No la pierdas.', 22, '#ffd166');
     const items = [
       { label: '1 JUGADOR · CONTRA BOTS', desc: 'Combate rápido contra la IA: 1v1, 1v2, 1v3 o contra un jefe.', onSelect: () => go(this, 'Play') },
+      { label: 'ONLINE · 1 CONTRA 1', desc: 'Crea una sala o únete con un código y pelea por internet. Servidor autoritativo con predicción y reconexión.', color: '#7df9ff', onSelect: () => go(this, 'Online') },
       { label: '2 JUGADORES · LOCAL', desc: 'Multijugador local 1v1 en el mismo teclado (J1: WASD + F G H R T V · J2: flechas + J K L I O P). También con mandos.', color: '#ff5fa2', onSelect: () => go(this, 'LocalSetup') },
       { label: 'CAMINO DEL AURA', desc: 'Modo historia: 8 capítulos de rivales cada vez más fuertes y jefes finales.', onSelect: () => go(this, 'Path') },
       { label: 'SUPERVIVENCIA', desc: 'Oleadas infinitas de bots. ¿Cuánto aguanta tu aura?', onSelect: () => go(this, 'Versus', { spec: { mode: 'survival', wave: 1 } }) },

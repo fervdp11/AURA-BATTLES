@@ -114,10 +114,16 @@ export class ClientSession {
     this.dirty = false;
     const pending = this.render.events;
     const L = this.L;
+    const pre = this.render.fighters.map(f => [f.x, f.y]);
     restoreInto(this.render, this.confirmed);
     this.L = this.C;
     while (this.L < L) this.stepRender(false);
     this.render.events = pending;
+    // suavizado visual: la corrección no se ve como un salto; se absorbe en unos fotogramas
+    this.render.fighters.forEach((f, i) => {
+      const dx = pre[i][0] - f.x, dy = pre[i][1] - f.y;
+      if (Math.abs(dx) < 160 && Math.abs(dy) < 160) { f._cx = (f._cx || 0) + dx; f._cy = (f._cy || 0) + dy; } else { f._cx = 0; f._cy = 0; }
+    });
     this.stats.rollbacks++; this.stats.resims += L - this.C;
     return true;
   }
@@ -143,16 +149,26 @@ export class ClientSession {
     return true;
   }
 
-  // avance por fotograma: decide cuántos ticks simular (sincronía con el reloj del servidor)
+  // avance por fotograma: decide cuántos ticks simular (sincronía con el reloj del servidor).
+  // Si el equipo va lento (pocos FPS, pestaña en segundo plano) se recupera el ritmo simulando más ticks
+  // por fotograma; si se ha quedado por detrás de lo confirmado, salta directamente al estado confirmado.
   frame(delta, readInput) {
-    this.acc = (this.acc || 0) + Math.min(delta, 100);
+    this.acc = (this.acc || 0) + Math.min(delta, 250);
     let n = 0;
-    while (this.acc >= TICK_MS && n < 4) { this.acc -= TICK_MS; n++; }
+    while (this.acc >= TICK_MS) { this.acc -= TICK_MS; n++; }
     const target = this.targetTick();
-    if (this.L < target - 3 && n < 4) { n++; this.stats.skips++; }      // vamos atrasados: un tick extra
-    if (this.L > target + 3 && n > 0) { n--; this.stats.stalls++; }     // demasiado adelantados: esperar
+    if (this.L < this.C) {
+      const pending = this.render.events;
+      restoreInto(this.render, this.confirmed);
+      this.render.events = pending;
+      this.L = this.C; this.dirty = false; this.stats.jumps = (this.stats.jumps || 0) + 1;
+    }
+    const behind = target - this.L;
+    if (behind > n + 2) { n = Math.min(behind, 15); this.stats.skips++; }   // atrasados: recuperar
+    else if (behind < -3 && n > 0) { n--; this.stats.stalls++; }           // demasiado adelantados: esperar
+    n = Math.min(n, 15);
     this.reconcile();
-    for (let i = 0; i < n; i++) this.tick(readInput());
+    for (let i = 0; i < n; i++) if (!this.tick(readInput())) break;
     this.reconcile();
     return n;
   }

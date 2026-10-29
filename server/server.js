@@ -124,7 +124,7 @@ class Room {
   broadcast(msg) { for (const p of this.players) if (p) send(p.ws, msg); }
   summary() {
     return { type: 'room', code: this.code, state: this.state, score: this.score,
-      players: this.players.map(p => p && { name: p.name, ready: p.ready, connected: !!(p.ws && p.ws.readyState === 1), character: p.choice ? p.choice.profile.name : null, rtt: Math.round(p.rtt || 0) }) };
+      players: this.players.map(p => p && { name: p.name, ready: p.ready, connected: !!(p.ws && p.ws.readyState === 1), character: p.choice ? p.choice.profile.name : null, profile: p.choice ? p.choice.profile : null, rtt: Math.round(p.rtt || 0) }) };
   }
   sendRoom() { for (let i = 0; i < 2; i++) { const p = this.players[i]; if (p) send(p.ws, { ...this.summary(), you: i }); } }
   tryStart() {
@@ -359,4 +359,7 @@ export function startServer({ port = Number(process.env.PORT) || 8080, host = '0
   }));
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) startServer();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const E = process.env;
+  startServer({ timer: Number(E.MATCH_TIMER) || undefined, rounds: Number(E.MATCH_ROUNDS) || undefined, reconnectMs: Number(E.RECONNECT_MS) || undefined });
+}

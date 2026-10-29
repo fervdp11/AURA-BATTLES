@@ -7,6 +7,7 @@ import { playerProfile, quickOpponents } from '../core/Match.js';
 import { rankFor, auraText } from '../data/progression.js';
 import { PATH, stageById, chaptersCleared } from '../data/path.js';
 import { botById } from '../data/bots.js';
+import { Online } from '../net/Online.js';
 import { CELEBRATIONS, DEFEATS } from '../sim/celebrations.js';
 
 const loopStart = a => { const c = CELEBRATIONS[a] || DEFEATS[a]; return c && c.anim.loop ? c.anim.loop[0] : 0; };
@@ -20,6 +21,7 @@ export class ResultScene extends Phaser.Scene {
     this.bg = new MenuBG(this);
     this.prevB = null;
     if (spec.mode === 'versus') { this.createVersus(spec, result, info); return; }
+    if (spec.mode === 'online') { this.createOnline(this.data2.online); return; }
     const win = result && result.win && spec.mode !== 'survival';
     const surv = spec.mode === 'survival';
     const training = spec.mode === 'training';
@@ -156,6 +158,71 @@ export class ResultScene extends Phaser.Scene {
     keyHints(this, '↑↓ elegir · ENTER confirmar');
     fadeIn(this);
     for (let i = 0; i < 4; i++) this.time.delayedCall(i * 300, () => this.confetti());
+  }
+  // Resultado online: lo decide el servidor (ganador, motivo y recompensas); aquí solo se muestra
+  createOnline(m) {
+    Audio.music('results');
+    const you = Online.start ? Online.start.you : Online.you, cols = ['#7df9ff', '#ff5fa2'];
+    const win = m.result.winner === you;
+    const reason = m.result.reason === 'abandon' ? (win ? 'El rival abandonó la partida' : 'Abandonaste la partida') : 'K.O.';
+    const t = txt(this, 640, 62, win ? '¡VICTORIA ONLINE!' : 'DERROTA ONLINE', 74, win ? '#7df9ff' : '#ff4d6d', { ox: 0.5, oy: 0.5, strokeThickness: 10 });
+    t.setShadow(0, 0, win ? '#7df9ff' : '#ff4d6d', 30, true, true).setScale(2).setAlpha(0);
+    this.tweens.add({ targets: t, scale: 1, alpha: 1, duration: 350, ease: 'Back.easeOut' });
+    txt(this, 640, 112, `${m.names[0]}  vs  ${m.names[1]}  ·  ${reason}  ·  marcador ${(m.score || [0, 0]).join(' – ')}`, 19, '#ffffff', { ox: 0.5, oy: 0.5, body: true });
+    const cfg = Online.start ? Online.start.cfg : null;
+    const profs = cfg ? cfg.players.map(p => p.profile) : [{}, {}];
+    const anim = i => (m.result.winner === i ? (CELEBRATIONS[profs[i].celebration] ? profs[i].celebration : 'flex') : 'kneel');
+    this.prev = new StickPreview(this, 150, 610, profs[0], { scale: 2.0, facing: 1, anim: anim(0), startFrame: loopStart(anim(0)), glow: m.result.winner === 0 ? 1.4 : 0.3 });
+    this.prevB = new StickPreview(this, 1130, 610, profs[1], { scale: 2.0, facing: -1, anim: anim(1), startFrame: loopStart(anim(1)), glow: m.result.winner === 1 ? 1.4 : 0.3 });
+    txt(this, 150, 640, 'J1 · ' + m.names[0] + (you === 0 ? ' (TÚ)' : ''), 18, cols[0], { ox: 0.5 });
+    txt(this, 1130, 640, 'J2 · ' + m.names[1] + (you === 1 ? ' (TÚ)' : ''), 18, cols[1], { ox: 0.5 });
+    // estadísticas comparadas
+    panel(this, 300, 150, 380, 380, { alpha: 0.85 });
+    txt(this, 490, 166, 'ESTADÍSTICAS', 22, '#ffffff', { ox: 0.5 });
+    const rows = [['Daño de aura', x => Math.round(x.dmg || 0)], ['Golpes', x => x.hits || 0], ['Combo máximo', x => x.maxCombo || 0], ['Parries', x => x.parries || 0], ['Humillaciones', x => x.humiliations || 0], ['Especiales', x => x.specials || 0], ['Ultimates', x => x.ults || 0], ['Esquivas', x => x.dodges || 0]];
+    rows.forEach(([k, f], i) => {
+      const a = f(m.stats[0]), b = f(m.stats[1]), y = 210 + i * 36;
+      txt(this, 490, y, k, 16, '#9a94b8', { ox: 0.5, body: true });
+      txt(this, 320, y, String(a), 19, a > b ? cols[0] : '#ffffff', {});
+      txt(this, 660, y, String(b), 19, b > a ? cols[1] : '#ffffff', { ox: 1 });
+    });
+    // recompensas del servidor
+    panel(this, 700, 150, 380, 380, { alpha: 0.85 });
+    const R = m.applied || {};
+    txt(this, 720, 162, 'RECOMPENSAS (SERVIDOR)', 20, '#7bd389');
+    let y = 196;
+    if (R.duplicate) txt(this, 720, y, 'Esta partida ya se había registrado.', 16, '#c9c3e6', { body: true });
+    else {
+      for (const it of R.items || []) { txt(this, 730, y, it.label, 15, '#c9c3e6', { body: true }); txt(this, 1060, y, '+' + it.ap + ' AP', 16, '#7df9ff', { ox: 1 }); y += 21; }
+      if ((R.penalties || []).length) { y += 4; txt(this, 720, y, 'PENALIZACIONES', 17, '#ff6b6b'); y += 22; for (const pe of R.penalties) { txt(this, 730, y, pe.label, 15, '#c9c3e6', { body: true }); txt(this, 1060, y, pe.ap !== undefined ? pe.ap + ' AP' : pe.rp + ' PR', 16, '#ff6b6b', { ox: 1 }); y += 21; } }
+      y = Math.max(y + 10, 400);
+      if (R.before) {
+        txt(this, 720, y, 'SALDO', 14, '#9a94b8', { body: true });
+        txt(this, 720, y + 18, `${R.before.ap} → ${R.after.ap} AP`, 22, '#ffd166');
+        txt(this, 720, y + 50, `${R.before.rp} → ${R.after.rp} PR`, 18, '#c9c3e6', { body: true });
+        if (R.rank) txt(this, 1060, y + 50, R.rank.name.toUpperCase(), 18, R.rank.color, { ox: 1 });
+      }
+    }
+    const fin = m.rewards[you] && m.rewards[you].final;
+    if (fin) this.auraFinal(890, 600, { value: fin.value === 'inf' ? Infinity : fin.value === '-inf' ? -Infinity : fin.value, label: fin.label, color: fin.color }, 0.62);
+    this.waitT = txt(this, 640, 668, '', 16, '#ffd166', { ox: 0.5, body: true });
+    const items = [
+      { label: 'REVANCHA', color: '#ffd166', onSelect: () => { Online.send({ type: 'rematch' }); this.waitT.setText('Esperando al rival para la revancha…'); } },
+      { label: 'CAMBIAR PERSONAJE', onSelect: () => { Online.send({ type: 'lobby' }); go(this, 'OnlineLobby'); } },
+      { label: 'SALIR', onSelect: () => { Online.leaveRoom(); go(this, 'Online'); } }
+    ];
+    this.menu = new MenuList(this, 300, 548, items, { w: 380, h: 30, gap: 4, size: 18 });
+    this.offNet = Online.listen((type, msg) => {
+      if (type === 'start') go(this, 'Fight', { spec: { mode: 'online', arena: msg.cfg.arena } });
+      if (type === 'rematch') this.waitT.setText(`Revancha: ${msg.votes.filter(Boolean).length}/2 listos`);
+      if (type === 'left') { this.waitT.setText('El rival ha salido de la sala.'); }
+      if (type === 'room' && msg.state === 'lobby' && !this._toLobby) { this._toLobby = true; go(this, 'OnlineLobby'); }
+    });
+    this.events.once('shutdown', () => this.offNet());
+    keyHints(this, '↑↓ elegir · ENTER confirmar');
+    fadeIn(this);
+    if (win) for (let i = 0; i < 4; i++) this.time.delayedCall(i * 300, () => this.confetti());
+    (R.newAch || []).forEach((a, i) => toast(this, '🏆 ' + a.name + ' (+' + a.ap + ' AP)', '#ffd166', 1600 + i * 3000));
   }
   // contador animado del aura final: sube/baja hasta su valor; los infinitos se disparan y estallan en ∞
   auraFinal(x, y, F, k = 1) {

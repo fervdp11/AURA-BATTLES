@@ -3,6 +3,7 @@ import { Save } from '../core/Save.js';
 import { Audio } from '../core/Audio.js';
 import { txt, StickPreview, autoGrad } from '../ui/UI.js';
 import { hex, mix } from '../view/StickRenderer.js';
+import { Online } from '../net/Online.js';
 import { STATUS } from '../sim/status.js';
 import { MOVES } from '../sim/moves.js';
 import { keyName, Input } from '../core/Input.js';
@@ -58,8 +59,16 @@ export class HUDScene extends Phaser.Scene {
     const es = this.enemies();
     this.ePortrait = this.makePortrait(es[0], 1214, 56, -1, this.versus ? SIDE_COL[1] : 0xff4d6d);
     // barras de técnicas: jugador (izquierda) y, en multijugador, J2 (derecha)
-    this.bars = [this.buildSlots(this.p, 'left')];
-    if (this.p2) this.bars.push(this.buildSlots(this.p2, 'right'));
+    if (this.fight.online) {
+      // online: solo mi barra de técnicas (con mis teclas) y el indicador de ping
+      const you = this.fight.session.you, me = b.fighters[you];
+      this.bars = [this.buildSlots(me, you === 0 ? 'left' : 'right')];
+      this.pingT = txt(this, 640, 122, '', 14, '#7bd389', { ox: 0.5, oy: 0.5, body: true, bold: true }).setDepth(52);
+      this.youT = txt(this, you === 0 ? 128 : 1152, 104, '▲ TÚ', 14, '#ffd166', { ox: you === 0 ? 0 : 1, oy: 0.5, body: true, bold: true }).setDepth(52);
+    } else {
+      this.bars = [this.buildSlots(this.p, 'left')];
+      if (this.p2) this.bars.push(this.buildSlots(this.p2, 'right'));
+    }
     // overlays
     this.flashRect = this.add.rectangle(640, 360, 1280, 720, 0xffffff, 0).setDepth(60);
     this.lbTop = this.add.rectangle(640, -40, 1280, 80, 0x000000, 1).setDepth(55);
@@ -401,6 +410,11 @@ export class HUDScene extends Phaser.Scene {
   update() {
     this.t++;
     const g = this.g; g.clear();
+    if (this.pingT) {
+      const n = Online.net, S = this.fight.session;
+      const ms = n ? Math.round(n.rtt) : 0, col = ms < 80 ? '#7bd389' : ms < 160 ? '#ffd166' : '#ff4d6d';
+      this.pingT.setText(`PING ${ms} ms${n && n.jitter > 8 ? ' · jitter ' + Math.round(n.jitter) : ''}${S && S.L - S.C > 30 ? ' · RED LENTA' : ''}`).setColor(col);
+    }
     const b = this.b, p = this.p;
     const T = this.texts;
     const es = this.enemies();

@@ -41,7 +41,7 @@ export function sanitizeFinisher(f) { return f === 'none' || (typeof f === 'stri
 // Construye la partida idéntica en servidor y clientes a partir de la configuración acordada
 export function buildOnlineBattle(cfg) {
   return new Battle({
-    fighters: cfg.players.map((p, i) => ({ team: i, profile: { ...p.profile, scale: 1, title: 'J' + (i + 1) }, loadout: { ...p.loadout }, human: true, ctrlProfile: i === 0 ? 'p1' : 'p2', finisher: p.finisher })),
+    fighters: cfg.players.map((p, i) => ({ team: i, profile: { ...p.profile, scale: 1, title: 'J' + (i + 1) }, loadout: { ...p.loadout }, human: true, ctrlProfile: 'solo', finisher: p.finisher })),
     mode: 'versus', versus: true, online: true, timer: cfg.timer, roundsToWin: cfg.rounds, seed: cfg.seed
   });
 }

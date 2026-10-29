@@ -330,6 +330,36 @@ function hslInt(h) {
 }
 
 // Transición cinemática entre escenas
+// Cuadro de texto modal (código de sala, URL del servidor...). Devuelve una promesa con el texto o null.
+export function textPrompt(scene, title, initial = '', o = {}) {
+  return new Promise(resolve => {
+    let val = initial;
+    const max = o.max || 40, D = 900;
+    const g = scene.add.graphics().setDepth(D);
+    g.fillStyle(0x000000, 0.8); g.fillRect(0, 0, 1280, 720);
+    g.fillStyle(0x120c22, 1); g.fillRoundedRect(240, 250, 800, 210, 14); g.lineStyle(2, 0x7df9ff, 1); g.strokeRoundedRect(240, 250, 800, 210, 14);
+    const t1 = txt(scene, 640, 285, title, 26, '#ffffff', { ox: 0.5 }).setDepth(D + 1);
+    const t2 = txt(scene, 640, 350, '', o.mono ? 26 : 40, '#7df9ff', { ox: 0.5, body: !!o.mono }).setDepth(D + 1);
+    const t3 = txt(scene, 640, 420, o.hint || 'ENTER aceptar · ESC cancelar · CTRL+V pegar', 15, '#9a94b8', { ox: 0.5, body: true }).setDepth(D + 1);
+    const show = () => t2.setText((val || '') + '_');
+    show();
+    const add = tx => { const f = o.filter ? o.filter(tx) : tx; if (f) { val = (val + f).slice(0, max); show(); } };
+    const onPaste = e => add((e.clipboardData || window.clipboardData).getData('text') || '');
+    // teclas imprimibles (incluye ':' '/' '.' para URLs); Backspace/Enter/Escape van por la pila de entrada
+    const onKey = e => { if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey) add(e.key); };
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('keydown', onKey);
+    let pop = null;
+    const close = r => { pop(); window.removeEventListener('paste', onPaste); window.removeEventListener('keydown', onKey); g.destroy(); t1.destroy(); t2.destroy(); t3.destroy(); resolve(r); };
+    pop = Input.push((a, code) => {
+      if (code === 'Enter' || code === 'NumpadEnter') return close(val);
+      if (code === 'Escape') return close(null);
+      if (code === 'Backspace') { val = val.slice(0, -1); show(); }
+    });
+    scene.events.once('shutdown', () => { window.removeEventListener('paste', onPaste); window.removeEventListener('keydown', onKey); });
+  });
+}
+
 export function go(scene, key, data) {
   if (scene._leaving) return;
   scene._leaving = true;

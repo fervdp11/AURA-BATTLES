@@ -31,6 +31,8 @@ const SHAKE = { light: [0, 0], medium: [70, 0.0025], heavy: [130, 0.005], mega: 
 const _ghostPose = makePose(POSES.dash);
 const _ghostJ = {};
 
+const JOINT_KEYS = ['hip', 'neck', 'sh', 'head', 'fElbow', 'fHand', 'nElbow', 'nHand', 'fKnee', 'fFoot', 'nKnee', 'nFoot'];
+
 export class BattleView {
   constructor(scene, battle, opts = {}) {
     this.scene = scene; this.b = battle; this.opts = opts;
@@ -112,6 +114,18 @@ export class BattleView {
       for (const k in j) { const v = j[k]; ij[k] = typeof v === 'number' && pj[k] !== undefined ? pj[k] + (v - pj[k]) * it : v; }
       swapped.push([f, j, f.x, f.y]);
       f.joints = ij; f.x = f._px + (f.x - f._px) * it; f.y = f._py + (f.y - f._py) * it;
+    }
+    // corrección de red (online): desplazamiento visual que se desvanece en vez de un salto
+    for (const f of b.fighters) {
+      if (!f._cx && !f._cy) continue;
+      if (Math.abs(f._cx) < 0.5 && Math.abs(f._cy) < 0.5) { f._cx = 0; f._cy = 0; continue; }
+      const src = f.joints, sj = f._sj || (f._sj = {});
+      for (const k in src) sj[k] = src[k];
+      for (const k of JOINT_KEYS) { sj[k + 'X'] += f._cx; sj[k + 'Y'] += f._cy; }
+      if (sj.rootX !== undefined) { sj.rootX += f._cx; sj.rootY += f._cy; }
+      if (!swapped.some(s0 => s0[0] === f)) swapped.push([f, src, f.x, f.y]);
+      f.joints = sj; f.x += f._cx; f.y += f._cy;
+      f._cx *= 0.78; f._cy *= 0.78;
     }
     try { this._drawFighters(b, gb, gg, go, ga, gs, gk); }
     finally { for (const [f, j, x, y] of swapped) { f.joints = j; f.x = x; f.y = y; } }

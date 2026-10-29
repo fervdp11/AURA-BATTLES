@@ -6,7 +6,8 @@ import { BattleView } from '../view/BattleView.js';
 import { ARENAS } from '../view/Arena.js';
 import { buildBattle, pickArena, survivalWave, botProfile } from '../core/Match.js';
 import { AIController } from '../sim/AI.js';
-import { go } from '../ui/UI.js';
+import { go, txt } from '../ui/UI.js';
+import { Online } from '../net/Online.js';
 import { finalAura } from '../data/progression.js';
 import { MOVES } from '../sim/moves.js';
 
@@ -27,6 +28,7 @@ export class FightScene extends Phaser.Scene {
     if (this.scene.isActive('Demo') || this.scene.isPaused('Demo')) this.scene.stop('Demo');
     const spec = this.spec;
     const st = Save.d.settings;
+    if (spec.mode === 'online') { this.createOnline(); return; }
     if (spec.mode === 'training') {
       spec.enemies = [DUMMY];
       spec.infiniteEnergy = spec.infiniteEnergy ?? true;
@@ -69,6 +71,69 @@ export class FightScene extends Phaser.Scene {
     this.cameras.main.fadeIn(300, 0, 0, 0);
   }
 
+  // ---------------- ONLINE ----------------
+  createOnline() {
+    const st = Save.d.settings;
+    const S = Online.session;
+    this.online = true; this.session = S;
+    this.battle = S.render;
+    this.arenaId = this.spec.arena || S.cfg.arena;
+    this.view = new BattleView(this, this.battle, { arena: this.arenaId, shake: st.shake, damageNumbers: st.damageNumbers, hitboxes: false, quality: st.quality });
+    const arenaDef = ARENAS.find(a => a.id === this.arenaId);
+    Audio.music((arenaDef && arenaDef.music) || 'fight1'); Audio.muffle(false);
+    this.paused = false; this.ended = false; this.kos = 0; this.acc = 0;
+    this.events.off('bev'); this.events.on('bev', e => this.onBattleEvent(e));
+    this.scene.launch('HUD', { fight: this }); this.scene.bringToTop('HUD');
+    // capa de avisos (rival desconectado, reconectando, abandonar)
+    this.ovG = this.add.graphics().setScrollFactor(0).setDepth(950);
+    this.ovT = txt(this, 640, 330, '', 34, '#ffffff', { ox: 0.5, oy: 0.5 }).setScrollFactor(0).setDepth(951);
+    this.ovS = txt(this, 640, 380, '', 18, '#c9c3e6', { ox: 0.5, oy: 0.5, body: true }).setScrollFactor(0).setDepth(951);
+    this.quitAsk = false;
+    this.pop = Input.push((a, code) => {
+      if (this.ended) return;
+      if (code === 'Escape' && Online.net && Online.net.status === 'error') { Online.disconnect(); go(this, 'Menu'); return; }
+      if (code === 'Escape') { this.quitAsk = !this.quitAsk; Audio.play('ui_move'); return; }
+      if (this.quitAsk && (code === 'Enter' || code === 'NumpadEnter')) { this.quitAsk = false; Online.send({ type: 'leave' }); this.onlineLeft = true; }
+    });
+    this.offNet = Online.listen((type, m) => { if (type === 'end') this.onlineEnd(m); });
+    this.events.once('shutdown', () => { if (this.pop) this.pop(); if (this.offNet) this.offNet(); if (this.view) this.view.destroy(); this.scene.stop('HUD'); });
+    Input.clearPressed();
+    this.cameras.main.fadeIn(300, 0, 0, 0);
+    if (Online.lastEnd && Online.start && Online.lastEnd.matchId === Online.start.matchId) this.onlineEnd(Online.lastEnd);
+  }
+  updateOnline(delta) {
+    Input.pollPad();
+    if (Online.net) Online.net.pump();
+    const S = this.session;
+    if (!this.endingOnline) S.frame(delta, () => Input.readGame('solo'));
+    else {
+      // tras el final del servidor ya no llegan confirmaciones: la celebración se reproduce en local
+      this.acc += Math.min(delta, 100);
+      while (this.acc >= 16.667) { this.acc -= 16.667; this.battle.step({}); }
+    }
+    this.view.interp = 1;
+    this.view.update(delta);
+    // avisos
+    const g = this.ovG; g.clear();
+    let title = '', sub = '';
+    const n = Online.net, P = Online.pause;
+    if (n && n.status === 'reconnecting') { title = 'RECONECTANDO…'; sub = 'Se ha cortado tu conexión. Intentando volver a la partida.'; }
+    else if (n && n.status === 'error') { title = 'SIN CONEXIÓN'; sub = (n.lastError || '') + ' · ESC para salir'; }
+    else if (P && P.resuming) { title = 'REANUDANDO EN ' + Math.max(1, Math.ceil((P.inMs - (performance.now() - P.at)) / 1000)); sub = '¡Atento!'; }
+    else if (P) { const left = Math.max(0, Math.ceil((P.timeout - (performance.now() - P.at)) / 1000)); title = P.who === S.you ? 'RECONECTANDO…' : 'RIVAL DESCONECTADO'; sub = `Esperando su vuelta: ${left} s. Si no vuelve, ganas por abandono.`; }
+    else if (this.quitAsk) { title = '¿ABANDONAR LA PARTIDA?'; sub = 'ENTER abandonar (cuenta como derrota) · ESC seguir jugando'; }
+    else if (this.onlineLeft && !this.ended) { title = 'SALIENDO…'; }
+    this.ovT.setText(title); this.ovS.setText(sub);
+    if (title) { g.fillStyle(0x000000, 0.6); g.fillRect(0, 280, 1280, 130); }
+  }
+  onlineEnd(m) {
+    if (this.endingOnline) return;
+    this.endingOnline = true; this.ended = true;
+    // se deja terminar la celebración local (si el combate acabó por K.O.) antes de ir a resultados
+    const wait = m.result.reason === 'ko' ? 2600 : 600;
+    this.time.delayedCall(wait, () => go(this, 'Result', { spec: { mode: 'online' }, online: m }));
+  }
+
   pause() {
     if (this.battle.phase === 'over') return;
     this.paused = true;
@@ -96,7 +161,7 @@ export class FightScene extends Phaser.Scene {
       const win = this.spec.mode === 'versus' || e.team === b.player.team;
       Audio.play(win ? 'victory' : 'defeat');
     }
-    if (e.type === 'matchEnd' && !this.ended) this.finish(e.result);
+    if (e.type === 'matchEnd' && !this.ended && !this.online) this.finish(e.result);
     if (e.type === 'waveClear') this.nextWave();
   }
 
@@ -149,6 +214,7 @@ export class FightScene extends Phaser.Scene {
   }
 
   update(time, delta) {
+    if (this.online) { this.updateOnline(delta); return; }
     if (this.paused) return;
     Input.pollPad();
     const b = this.battle;

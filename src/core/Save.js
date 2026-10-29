@@ -93,6 +93,26 @@ class SaveManager {
     return { ...r, rp: d.rankPoints - before.rp, newAch, rank, rankUp: rank.index > prevRank, before, after: { ap: apMatch, rp: d.rankPoints }, achAp: d.ap - apMatch };
   }
 
+  // Partida online: las recompensas vienen calculadas por el servidor (nunca por el cliente) y se aplican
+  // una sola vez por partida.
+  recordOnline({ matchId, reward, win, stats = {} }) {
+    const d = this.data, s = d.stats;
+    const before = { ap: d.ap, rp: d.rankPoints };
+    if (!matchId || !reward || d.recordedMatchIds.includes(matchId)) return { duplicate: true, before, after: before, items: [], penalties: [], newAch: [], rank: rankFor(d.rankPoints) };
+    d.recordedMatchIds.push(matchId); if (d.recordedMatchIds.length > 40) d.recordedMatchIds.shift();
+    const ap = Math.max(0, Math.min(5000, Math.round(reward.ap || 0))), rp = Math.max(-200, Math.min(500, Math.round(reward.rp || 0)));
+    const prevRank = rankFor(d.rankPoints).index;
+    s.matches++; s.online = (s.online || 0) + 1;
+    if (win) { s.wins++; s.streak++; s.bestStreak = Math.max(s.bestStreak, s.streak); s.onlineWins = (s.onlineWins || 0) + 1; } else { s.losses++; s.streak = 0; }
+    s.maxCombo = Math.max(s.maxCombo, stats.maxCombo || 0); s.parries += stats.parries || 0; s.humiliations += stats.humiliations || 0;
+    d.rankPoints = Math.max(0, d.rankPoints + rp); d.ap += ap;
+    const apMatch = d.ap;
+    const newAch = this.checkAchievements();
+    const rank = rankFor(d.rankPoints);
+    this.save();
+    return { ap, rp: d.rankPoints - before.rp, items: reward.items || [], penalties: reward.penalties || [], newAch, rank, rankUp: rank.index > prevRank, before, after: { ap: apMatch, rp: d.rankPoints }, achAp: d.ap - apMatch };
+  }
+
   checkAchievements() {
     const d = this.data;
     const out = [];
