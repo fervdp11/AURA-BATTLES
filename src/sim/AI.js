@@ -458,7 +458,7 @@ export class AIController {
         const showy = this.style === 'showboat' ? 2.2 : this.style === 'chill' ? 1.5 : 1;
         // las de suelo son la oportunidad clara; las demás, de vez en cuando (no las spamea)
         const ground = opp.state === 'knockdown';
-        if ((safe || this.chance(L.mistake)) && (ground || this.chance(0.35))) add((ground ? 3 : 1.6) * showy * this.humTrust * (hp < 0.5 ? 1.5 : 1), () => this.press(inp, 'taunt'), 'auraHum');
+        if ((safe || this.chance(L.mistake * 2.5)) && (ground || this.chance(0.35))) add((ground ? 3 : 1.6) * showy * this.humTrust * (hp < 0.5 ? 1.5 : 1) * (0.35 + L.read), () => this.press(inp, 'taunt'), 'auraHum');
       }
       // el rival se está humillando: castigo prioritario
       if (o.move && MOVES[o.move] && MOVES[o.move].humAura && this.chance(0.3 + L.punish * 0.7)) {

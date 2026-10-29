@@ -23,7 +23,7 @@ export class MenuScene extends Phaser.Scene {
     const items = [
       { label: '1 JUGADOR · CONTRA BOTS', desc: 'Combate rápido contra la IA: 1v1, 1v2, 1v3 o contra un jefe.', onSelect: () => go(this, 'Play') },
       { label: 'ONLINE · 1 CONTRA 1', desc: 'Crea una sala o únete con un código y pelea por internet. Servidor autoritativo con predicción y reconexión.', color: '#7df9ff', onSelect: () => go(this, 'Online') },
-      { label: '2 JUGADORES · LOCAL', desc: 'Multijugador local 1v1 en el mismo teclado (J1: WASD + F G H R T V · J2: flechas + J K L I O P). También con mandos.', color: '#ff5fa2', onSelect: () => go(this, 'LocalSetup') },
+      { label: '2 JUGADORES · LOCAL', desc: 'Multijugador local 1v1 en el mismo teclado (J1: WASD + F G H R T V E · J2: flechas + J K L I O P U). También con mandos.', color: '#ff5fa2', onSelect: () => go(this, 'LocalSetup') },
       { label: 'CAMINO DEL AURA', desc: 'Modo historia: 8 capítulos de rivales cada vez más fuertes y jefes finales.', onSelect: () => go(this, 'Path') },
       { label: 'SUPERVIVENCIA', desc: 'Oleadas infinitas de bots. ¿Cuánto aguanta tu aura?', onSelect: () => go(this, 'Versus', { spec: { mode: 'survival', wave: 1 } }) },
       { label: 'DUELO PERSONALIZADO', desc: 'Elige rival entre más de 100 bots, dificultad, escenario y reglas.', onSelect: () => go(this, 'Custom') },
@@ -33,7 +33,7 @@ export class MenuScene extends Phaser.Scene {
       { label: 'AJUSTES', desc: 'Audio, controles personalizables, vídeo y datos.', onSelect: () => go(this, 'Settings') }
     ];
     this.desc = txt(this, 76, 660, '', 18, '#c9c3e6', { body: true });
-    this.menu = new MenuList(this, 70, 186, items, { w: 470, h: 46, gap: 6, onChange: it => this.desc.setText(it.desc) });
+    this.menu = new MenuList(this, 70, 180, items, { w: 470, h: 42, gap: 5, size: 24, onChange: it => this.desc.setText(it.desc) });
     this.desc.setText(items[this.menu.idx].desc);
     // panel de perfil
     const r = rankFor(d.rankPoints);

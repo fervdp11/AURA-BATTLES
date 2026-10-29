@@ -19,6 +19,7 @@ export class HUDScene extends Phaser.Scene {
   create() {
     // la instancia de escena se reutiliza entre combates: reinicia el estado
     this.pills0 = []; this.pills1 = []; this.lastMove = null; this.tut = null; this.sl = null;
+    this.film = 0; this.filmMax = 0; this.recT = null; this.pingT = null; this.youT = null; // estado del combate anterior
     const b = this.fight.battle;
     this.b = b;
     this.versus = !!b.opts.versus;

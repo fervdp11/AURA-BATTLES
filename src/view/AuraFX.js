@@ -22,8 +22,8 @@ class Pool {
 const SEGS = [['hip', 'neck', 1], ['sh', 'nElbow', 0.55], ['nElbow', 'nHand', 0.5], ['sh', 'fElbow', 0.5], ['fElbow', 'fHand', 0.45], ['hip', 'nKnee', 0.6], ['nKnee', 'nFoot', 0.5], ['hip', 'fKnee', 0.55], ['fKnee', 'fFoot', 0.45]];
 
 export class AuraLayer {
-  constructor(scene, depth = 7, shadowDepth = -6) {
-    this.s = scene;
+  constructor(scene, depth = 7, shadowDepth = -6, low = false) {
+    this.s = scene; this.low = low; // calidad baja: menos capas y partículas
     this.back = new Pool(scene, depth, 'ADD');       // resplandor y llamas detrás del cuerpo
     this.front = new Pool(scene, depth + 4, 'ADD');  // destellos finos delante
     this.dark = new Pool(scene, depth - 1, 'NORMAL'); // aura de vacío (oscura)
@@ -48,8 +48,9 @@ export class AuraLayer {
       }
     }
     let n = 0;
+    const step = this.low ? 1 : 0.5;
     for (const [a, b, w] of SEGS) {
-      for (let t = 0; t <= 1.001; t += 0.5) {
+      for (let t = 0; t <= 1.001; t += step) {
         const x = j[a + 'X'] + (j[b + 'X'] - j[a + 'X']) * t, y = j[a + 'Y'] + (j[b + 'Y'] - j[a + 'Y']) * t;
         const im = this.back.get('softGlow');
         im.setPosition(x, y).setScale(0.62 * s * w * pulse * (0.9 + I * 0.25)).setTint(style === 'void' ? 0x8a2be2 : col(n++)).setAlpha(0.13 * A);
@@ -61,7 +62,7 @@ export class AuraLayer {
     const core = this.back.get('softGlow');
     core.setPosition((j.hipX + j.neckX) / 2, (j.hipY + j.neckY) / 2).setScale(1.3 * s * pulse).setTint(style === 'void' ? 0x2a0045 : col(5)).setAlpha(0.1 * A);
     // 2) lenguas de fuego que nacen del cuerpo (a partir de intensidad media, o siempre en llamarada)
-    const flames = style === 'flame' ? 14 : I > 0.55 ? Math.round(6 + I * 4) : 0;
+    const flames = Math.round((style === 'flame' ? 14 : I > 0.55 ? 6 + I * 4 : 0) * (this.low ? 0.5 : 1));
     for (let i = 0; i < flames; i++) {
       const u = (i + 0.5) / flames;
       const ph = time * 0.09 + i * 1.37;
@@ -76,7 +77,7 @@ export class AuraLayer {
     let P = this.parts.get(key);
     if (!P) { P = []; this.parts.set(key, P); }
     const rate = { classic: 0.25, flame: 0.45, sparkle: 0.5, electric: 0.35, hearts: 0.28, sixseven: 0.3, prism: 0.45, void: 0.35 }[style] ?? 0.25;
-    if (Math.random() < rate * Math.min(1.5, I) && P.length < 40) {
+    if (Math.random() < rate * Math.min(1.5, I) * (this.low ? 0.5 : 1) && P.length < (this.low ? 16 : 40)) {
       const t = Math.random();
       P.push({ x: j.hipX + (j.neckX - j.hipX) * t + (Math.random() - 0.5) * 30 * s, y: j.hipY + (j.neckY - j.hipY) * t + (Math.random() - 0.5) * 20 * s, vx: (Math.random() - 0.5) * 0.6, vy: -0.8 - Math.random() * 1.6, life: 1, i: Math.floor(Math.random() * 99), r: Math.random() * 6.28 });
     }

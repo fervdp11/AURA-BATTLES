@@ -42,7 +42,7 @@ export class BattleView {
     // reflejo: se dibuja opaco en una textura y la transparencia se aplica a la imagen entera (sin solapes visibles)
     this.gRefl = add.graphics().setVisible(false);
     this.reflRT = this.arena.reflect > 0 ? add.renderTexture(0, 0, 2600, 520).setOrigin(0, 0).setDepth(-50).setAlpha(this.arena.reflect) : null;
-    this.aura = new AuraLayer(scene, 7);
+    this.aura = new AuraLayer(scene, 7, -6, opts.quality === 'baja');
     this.gShadow = add.graphics().setDepth(-5);
     this.gBack = add.graphics().setDepth(5);
     this.gGlow = add.graphics().setDepth(8).setBlendMode('ADD');
