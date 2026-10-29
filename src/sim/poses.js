@@ -1,6 +1,7 @@
 // Biblioteca de poses (formato por objetivos, ver skeleton.js) y modificadores procedurales.
 // Referencias respecto al hombro (escala 1): barbilla [7,-14], boca [9,-20], ojos [9,-30], frente [6,-40],
 // coronilla [0,-46], pecho [8,14], barriga [6,32], cadera [0,48]. Alcance máximo del brazo: 60.
+import { dsin, dcos } from './dmath.js';
 import { makePose, lerpPose, copyPose, ease } from './skeleton.js';
 import { HUM_POSES } from './humiliations.js';
 
@@ -192,7 +193,7 @@ export const POSES = {
 export function pose(name) { return POSES[name] || POSES.idle; }
 
 // ---------- modificadores procedurales (mutan una pose según el frame) ----------
-const S = Math.sin, C = Math.cos;
+const S = dsin, C = dcos;
 Object.assign(POSES, HUM_POSES);
 
 export const MODS = {
@@ -265,7 +266,7 @@ export const MODS = {
     p.hip[0] = s * 6; p.hip[1] = -70 + Math.abs(c) * 6; p.lean = s * 6; p.head = c * 8;
     p.fn = [16 + s * 6, s > 0.5 ? -10 : 0]; p.ff = [-16 + s * 6, s < -0.5 ? -10 : 0];
   },
-  thrust(p, f) { const k = Math.max(0, Math.sin(f * 0.5)); p.hip[0] += k * 12; p.lean -= k * 10; p.head -= k * 6; },
+  thrust(p, f) { const k = Math.max(0, dsin(f * 0.5)); p.hip[0] += k * 12; p.lean -= k * 10; p.head -= k * 6; },
   menacing(p, f) { p.lean += S(f * 0.1) * 2; p.head += S(f * 0.13) * 3; p.hn[1] += S(f * 0.2) * 2; },
   shiver(p, f) { p.hn[0] += S(f * 3) * 2; p.hf[0] += S(f * 3.3) * 2; }
 };

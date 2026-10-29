@@ -1,3 +1,4 @@
+import { dsin, dcos, dhypot, ipow } from './dmath.js';
 import {
   GROUND_Y, WALL_L, WALL_R, GRAVITY, MAX_FALL, MAX_AURA, MAX_ENERGY, WALK_SPEED, BACK_SPEED, JUMP_VY, JUMP_VX,
   DASH_FRAMES, DASH_SPEED, DASH_IFRAMES, DASH_COOLDOWN, PARRY_WINDOW, PARRY_LOCKOUT, BUFFER_FRAMES, TURN_DELAY,
@@ -173,7 +174,8 @@ export class Fighter {
   readInput(inp) {
     const prev = this.input;
     this.input = inp;
-    if (this.hasStatus('inverted')) { const l = inp.l; inp.l = inp.r; inp.r = l; }
+    // controles invertidos: copia (nunca muta la entrada recibida; la red la reutiliza al resimular)
+    if (this.hasStatus('inverted')) { inp = { ...inp, l: inp.r, r: inp.l }; this.input = inp; }
     const f = this.b.frame;
     for (const a of ACTIONS) {
       if (inp.pressed[a]) this.buffer.push({ a, fwd: this.fwdHeld(), back: this.backHeld(), down: inp.d, up: inp.u, t: f });
@@ -580,8 +582,8 @@ export class Fighter {
     }
     if (!t.alive && !spec.allowKO) { this.b.releaseLock(this, L, true); this.endMove(); return; }
     const off = spec.off || [60, 0];
-    const ox = typeof off[0] === 'function' ? off[0](L.f) : off[0];
-    const oy = typeof off[1] === 'function' ? off[1](L.f) : off[1];
+    const ox = typeof off[0] === 'function' ? off[0](L.f, this, t) : off[0];
+    const oy = typeof off[1] === 'function' ? off[1](L.f, this, t) : off[1];
     // el agarrado se desliza a su sitio (sin teletransporte)
     let tx = this.x + this.facing * ox * this.scale;
     const ty = Math.min(GROUND_Y, this.y + oy);
@@ -715,7 +717,7 @@ export class Fighter {
           if (k === 'n') MODS.robot(out, this.walkPhase * 2);
           else if (k === 's') MODS.snapAlt(out, this.walkPhase);
           else if (k === 'p') out.lean -= 2;
-          else { out.lean += back ? -4 : 3; out.hip[1] += 2; const s = Math.sin(this.walkPhase * 0.5); out.hn[0] += s * 3; out.hf[0] -= s * 3; }
+          else { out.lean += back ? -4 : 3; out.hip[1] += 2; const s = dsin(this.walkPhase * 0.5); out.hn[0] += s * 3; out.hf[0] -= s * 3; }
         } else MODS.breathe(out, f);
         if (this.hasStatus('mewing') || this.hasStatus('infMewing')) out.face = 'mew';
         if (this.auraPct < 0.25 && out.face === 'normal') out.face = 'hurt';
@@ -723,9 +725,9 @@ export class Fighter {
       }
       case 'run': {
         copyPose(POSES.run, out);
-        const s = Math.sin(this.walkPhase * 0.42);
+        const s = dsin(this.walkPhase * 0.42);
         out.hn[0] = 6 + s * 30; out.hn[1] = 12 - Math.abs(s) * 10; out.hf[0] = 4 - s * 30; out.hf[1] = 14 - Math.abs(s) * 10;
-        out.hip[1] = -72 + Math.abs(Math.cos(this.walkPhase * 0.42)) * 4;
+        out.hip[1] = -72 + Math.abs(dcos(this.walkPhase * 0.42)) * 4;
         return 'run';
       }
       case 'block': copyPose(this.lowBlock ? POSES.lowBlock : POSES.block, out); return this.lowBlock ? 'lowblock' : 'block';
@@ -750,7 +752,7 @@ export class Fighter {
       }
       case 'airhit': {
         // lanzado al espacio: sube recto, rígido y agitando brazos (sin girar en horizontal)
-        if (this.toSpace) { copyPose(POSES.launchUp, out); out.lean += Math.sin(this.sf * 0.5) * 6; out.hn[0] += Math.sin(this.sf * 0.9) * 8; out.hf[0] -= Math.sin(this.sf * 0.9 + 1) * 8; return 'space'; }
+        if (this.toSpace) { copyPose(POSES.launchUp, out); out.lean += dsin(this.sf * 0.5) * 6; out.hn[0] += dsin(this.sf * 0.9) * 8; out.hf[0] -= dsin(this.sf * 0.9 + 1) * 8; return 'space'; }
         const big = this.vy < -10 || this.juggle > 2;
         copyPose(big ? POSES.tumble : POSES.airHurt, out);
         out.lean += -Math.max(-30, Math.min(40, this.vy * 3));
@@ -761,7 +763,7 @@ export class Fighter {
         copyPose(this.kdFace ? POSES.lyingFace : POSES.lying, out);
         if (this.sf < 6) out.hip[1] -= (6 - this.sf) * 2.5; // rebote al caer
         if (this.sf > 20) out.face = 'hurt';
-        if (this.humReact && this.humReact.until > this.b.frame) { out.face = this.humReact.face; out.head += Math.sin(this.b.frame * 0.9) * 4; }
+        if (this.humReact && this.humReact.until > this.b.frame) { out.face = this.humReact.face; out.head += dsin(this.b.frame * 0.9) * 4; }
         return 'kd';
       }
       case 'getup': {
@@ -882,7 +884,7 @@ export class Fighter {
       }
       if (!pt) continue;
       const reach = (BONES.upper + BONES.fore) * this.scale * 1.08;
-      if (Math.hypot(pt[0] - this.joints.shX, pt[1] - this.joints.shY) > reach) continue;
+      if (dhypot(pt[0] - this.joints.shX, pt[1] - this.joints.shY) > reach) continue;
       const ramp = Math.min(1, (m.f - c.from + 1) / 3, (c.to - m.f + 1) / 3);
       out = out || {};
       out[c.hand || 'n'] = { x: pt[0], y: pt[1], w: ramp };
@@ -912,7 +914,7 @@ export class Fighter {
         st.toX = dx + this.vx * st.dur * 0.45 * (1 - st.t);
         const e = easeInOut(Math.min(1, st.t));
         ft.x = st.fromX + (st.toX - st.fromX) * e;
-        ft.y = this.y - Math.sin(Math.min(1, st.t) * Math.PI) * st.lift;
+        ft.y = this.y - dsin(Math.min(1, st.t) * Math.PI) * st.lift;
         if (st.t >= 1) { ft.step = null; ft.planted = true; ft.x = st.toX; ft.y = this.y; this.b.emit('step', { f: this, x: ft.x, k }); }
         continue;
       }
@@ -934,7 +936,7 @@ export class Fighter {
 const INTERRUPT = new Set(['hitstun', 'airhit', 'knockdown', 'ko', 'lose', 'win', 'locked', 'getup']);
 const _tgt = makePose(POSES.idle);
 const _ovr = { hands: { n: null, f: null }, feet: { n: null, f: null } };
-function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - ipow(-2 * t + 2, 2) / 2; }
 
 // Punto del cuerpo del rival para contactos (en coordenadas de mundo)
 // puntos del propio cuerpo para gestos (sacudirse el hombro, mirar el reloj, aplaudir, atarse la zapatilla)

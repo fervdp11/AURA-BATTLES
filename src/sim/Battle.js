@@ -1,3 +1,4 @@
+import { dhypot } from './dmath.js';
 import { GROUND_Y, WALL_L, WALL_R, MAX_ENERGY, JUGGLE_LIMIT, COMBO_HIT_LIMIT, ARENA_W } from './constants.js';
 import { Fighter } from './Fighter.js';
 import { bodySurface, shiftJoints } from './skeleton.js';
@@ -29,11 +30,11 @@ function overlap(a, b) {
 function lockContactPoint(a, d) {
   const ja = a.joints, jd = d.joints;
   if (!ja || !jd || jd.hipX === undefined) return [d.x, d.y - 100 * d.scale];
-  const segD = (px, py, ax, ay, bx, by) => { const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2)); return Math.hypot(px - ax - vx * t, py - ay - vy * t); };
+  const segD = (px, py, ax, ay, bx, by) => { const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2)); return dhypot(px - ax - vx * t, py - ay - vy * t); };
   let best = null, bd = Infinity;
   for (const k of ['nHand', 'fHand', 'nFoot', 'fFoot']) {
     const x = ja[k + 'X'], y = ja[k + 'Y'];
-    const dist = Math.min(segD(x, y, jd.hipX, jd.hipY, jd.neckX, jd.neckY) - 10 * d.scale, Math.hypot(x - jd.headX, y - jd.headY) - jd.headR);
+    const dist = Math.min(segD(x, y, jd.hipX, jd.hipY, jd.neckX, jd.neckY) - 10 * d.scale, dhypot(x - jd.headX, y - jd.headY) - jd.headR);
     if (dist < bd) { bd = dist; best = [x, y]; }
   }
   return best && bd < 45 * d.scale ? best : [d.x, d.y - 100 * d.scale];
@@ -44,7 +45,8 @@ export class Battle {
     this.opts = opts;
     this.mode = opts.mode || 'versus';
     this.training = !!opts.training;
-    this.rand = rng(opts.seed ?? (Date.now() & 0xffffffff));
+    // estado del generador dentro del propio objeto: la partida se puede copiar/restaurar (red con rollback)
+    this.rngState = (opts.seed ?? (Date.now() & 0xffffffff)) >>> 0;
     this.frame = 0;
     this.events = [];
     this.fighters = [];
@@ -151,6 +153,13 @@ export class Battle {
     if (this.combosEnded) this.combosEnded();
     this.snapshot();
     this.updatePhase();
+  }
+
+  rand() {
+    let a = this.rngState | 0; a = (a + 0x6D2B79F5) | 0; this.rngState = a >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
   snapshot() {

@@ -1,5 +1,6 @@
 // Definición de todos los movimientos. Cada técnica tiene animación propia, reglas de impacto
 // y formas de ser esquivada o contrarrestada. Frames a 60 Hz. Daño sobre 1000 de aura.
+import { dsin } from './dmath.js';
 import { GROUND_Y, WALL_L, WALL_R } from './constants.js';
 import { humMoveDefs, HUM_IDS } from './humiliations.js';
 
@@ -30,7 +31,7 @@ const total = d => d.startup + d.active + d.recovery;
 const shakePoint = (a, t, fr, shake) => {
   const ja = a.joints, jt = t.joints;
   const x = (ja.shX + jt.shX) / 2;
-  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? Math.sin(fr * 0.75) * 7 * a.scale : 0);
+  const y = (ja.shY + jt.shY) / 2 + 30 * a.scale + (shake ? dsin(fr * 0.75) * 7 * a.scale : 0);
   return { x, y };
 };
 const ramp = (fr, a, b) => Math.max(0, Math.min(1, (fr - a + 1) / 4, (b - fr + 1) / 4));
@@ -1338,11 +1339,12 @@ def('finalAuraJudgment', {
         b.spawnProjectile(f, { kind: 'pillar', x: d.x, y: GROUND_Y - 400, absVx: true, vx: 0, w: 110, h: 800, life: 14, delay: 36, track: d, trackFor: 24, pierce: true, clash: false,
           hit: { dmg: 0, unblockable: true, ultimate: true, grab: false, stun: 1, kb: [0, 0] }, src: 'finalAuraJudgment',
           onHit: (bb, p, dd) => {
-            if (!f.move || f.move.def.id !== 'finalAuraJudgment' || f.move.lock) return;
+            const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
+          if (!f.move || f.move.def.id !== 'finalAuraJudgment' || f.move.lock) return;
             const hits = [];
             for (let i = 0; i < 5; i++) hits.push({ f: 14 + i * 14, dmg: 30, spark: 'heavy', fx: 'lightning' });
             hits.push({ f: 100, dmg: 150, spark: 'mega', fx: 'judgment', say: 'JUZGADO', sayColor: '#fff6a0', last: true, hitstop: 22 });
-            bb.startLock(f, dd, { frames: 112, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: 'airHurt', cine: true, anim: [[0, 'judgment'], [112, 'judgment']], hits, end: { kb: [3, -12], knockdown: true } });
+            bb.startLock(f, dd, { frames: 112, off: [(t, a, d) => (d.x - a.x) * a.facing / a.scale, 0], tpose: 'airHurt', cine: true, anim: [[0, 'judgment'], [112, 'judgment']], hits, end: { kb: [3, -12], knockdown: true } });
           } });
       }
     }
@@ -1370,7 +1372,7 @@ def('coffinDance', {
       b.startLock(f, d, {
         frames: 140, off: [t => 70, t => (t > 20 && t < 120 ? -70 : 0)], tpose: 'lying', cine: true,
         anim: [[0, 'coffin'], [140, 'coffin']], mods: [[0, 140, 'dance']],
-        frame: (ff, bb, mm, t) => { if (t === 2) bb.emit('fx', { name: 'coffin', f: ff, d }); },
+        frame: (ff, bb, mm, t, tt) => { if (t === 2) bb.emit('fx', { name: 'coffin', f: ff, d: tt }); },
         hits: [{ f: 40, dmg: 40, spark: 'light' }, { f: 80, dmg: 60, spark: 'medium' }, { f: 125, dmg: exec ? 999 : 150, spark: 'mega', fx: 'coffinDrop', say: exec ? 'GG' : '⚰️', last: true, hitstop: 20 }],
         end: { kb: [6, -5], knockdown: true }
       });
@@ -1707,10 +1709,11 @@ def('brainrotInvasion', {
       b.spawnProjectile(f, { kind: 'shark', ox: 50, oy: -40, vx: 14, w: 140, h: 80, life: 90, maxHits: 1, scale: 1.4,
         hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'brainrotInvasion',
         onHit: (bb, p, dd) => {
+          const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
           if (!f.move || f.move.def.id !== 'brainrotInvasion' || f.move.lock) return;
           p.dead = true;
           bb.startLock(f, dd, {
-            frames: 150, off: [() => (dd.x - f.x) * f.facing / f.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
+            frames: 150, off: [(t, a, d) => (d.x - a.x) * a.facing / a.scale, 0], tpose: t => (t < 40 ? 'airHurt' : t < 80 ? 'scared' : t < 115 ? 'dizzy' : 'hurt'), cine: true,
             anim: [[0, 'point'], [40, 'conduct'], [150, 'conduct']], mods: [[40, 150, 'conduct']],
             frame: (ff, b2, mm, t, tt) => {
               if (t === 2) b2.emit('fx', { name: 'brainrot', step: 'shark', f: tt, a: ff });
@@ -1739,11 +1742,12 @@ def('mainCharacterEnding', {
       b.spawnProjectile(f, { kind: 'none', x: d.x, y: GROUND_Y - 100, absVx: true, vx: 0, w: 120, h: 200, life: 10, delay: 26, track: d, trackFor: 20, pierce: true, clash: false,
         hit: { dmg: 0, unblockable: true, ultimate: true, stun: 1, kb: [0, 0] }, src: 'mainCharacterEnding',
         onHit: (bb, p, dd) => {
+          const f = p.owner; // el lanzador viene del proyectil (restaurable), no del ámbito exterior
           if (!f.move || f.move.def.id !== 'mainCharacterEnding' || f.move.lock) return;
           f.addStatus('cool', 300, {}, f);
           bb.startLock(f, dd, {
             // el protagonista se aleja sin mirar mientras todo explota a su espalda
-            frames: 130, off: [t => Math.max(80, (dd.x - f.x) * f.facing / f.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
+            frames: 130, off: [(t, a, d) => Math.max(80, (d.x - a.x) * a.facing / a.scale), 0], tpose: t => (t < 90 ? 'scared' : 'airHurt'), cine: true,
             anim: [[0, 'pockets'], [14, 'walkAway', 'inOut'], [130, 'walkAway']],
             frame: (ff, b2, mm, t, tt) => {
               if (t > 14 && t < 100) ff.x -= ff.facing * 2.2;

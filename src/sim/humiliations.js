@@ -3,6 +3,7 @@
 // contacto de mano (IK con dedos articulados), sonidos no vocales y reacción del rival. Todas son
 // interrumpibles: un golpe las corta (y la siesta te deja más expuesto), y se pueden cancelar con
 // bloqueo o dash. El rival derribado puede responder con un "despertar con rabia" si le humillan cerca.
+import { ipow } from './dmath.js';
 import { makePose } from './skeleton.js';
 
 const P = o => makePose(o);
@@ -56,7 +57,7 @@ export function humFactor(f, b) {
   if (m.data.humK === undefined) {
     if (!f.humUses || f.humUses.round !== b.round) f.humUses = { round: b.round };
     const n = f.humUses[m.def.id] = (f.humUses[m.def.id] || 0) + 1;
-    m.data.humK = Math.pow(0.75, n - 1);
+    m.data.humK = ipow(0.75, n - 1);
   }
   return m.data.humK;
 }
