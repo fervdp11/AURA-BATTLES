@@ -154,11 +154,13 @@ const hex = c => (typeof c === 'number' ? c : parseInt(String(c || '#ffffff').re
 export function makeLook(p = {}) {
   const get = cat => byId(equippedId(p, cat));
   const body = get('body'), pants = get('pants'), shoes = get('shoes'), face = get('face'), neck = get('neck'), aura = get('aura'), skin = get('skin');
+  const isShark = !!(skin && skin.data.shark);
   const ac = p.equip && p.equip.auraColor ? byId(p.equip.auraColor) : null;
   const auraC = ac ? ac.data.c : p.aura;
   const rainbowAura = auraC === 'rainbow';
   return {
-    body: hex(p.color || '#f4f4f8'), body2: hex(p.color2 || (body ? body.data.c2 : null) || p.color || '#f4f4f8'),
+    // el tiburón tiene su piel azul grisácea salvo que se le equipe un patrón de cuerpo (no liso)
+    body: isShark && (!body || body.data.pattern === 'solid') ? 0x6c9bd2 : hex(p.color || '#f4f4f8'), body2: hex(p.color2 || (body ? body.data.c2 : null) || p.color || '#f4f4f8'),
     bodyPattern: body ? body.data.pattern : 'solid', bodyGlowLines: !!(body && body.data.glowLines),
     accent: hex(p.accent || '#ffd166'), outline: p.boss ? 0x14000a : 0x0a0a14,
     aura: rainbowAura ? 0xffffff : hex(auraC || '#7df9ff'), auraRainbow: rainbowAura,
@@ -167,7 +169,9 @@ export function makeLook(p = {}) {
     eyewear: face ? face.data.eye : (p.accessory === 'shades' ? 'shades' : 'none'),
     neck: neck ? neck.data.neck : 'none',
     pants: pants ? pants.data.style : 'sport', pantsColor: hex(p.pantsColor || (pants ? pants.data.c1 : '#2b2d42')), pantsColor2: hex(p.pantsColor2 || (pants ? pants.data.c2 : '#ffffff')),
-    shoes: shoes ? shoes.data.style : 'sneaker', shoesColor: p.shoesColor ? hex(p.shoesColor) : null,
+    // el tiburón calza sus zapatillas-tiburón salvo que se le equipe otro calzado
+    shoes: isShark && (!shoes || shoes.id === 'shoes:sneaker') ? 'shark' : shoes ? shoes.data.style : 'sneaker',
+    shoesColor: p.shoesColor ? hex(p.shoesColor) : isShark && (!shoes || shoes.id === 'shoes:sneaker') ? 0x4cc9f0 : null,
     skin: skin && skin.data.shark ? 'shark' : 'stick'
   };
 }

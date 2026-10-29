@@ -303,7 +303,7 @@ function drawSharkBody(g, glow, j, s, BC, look, oc, a, d, time) {
   g.fillStyle(0xffffff, a); for (let i = 0; i < 4; i++) { const u = rx * (0.5 + i * 0.12); const [q1x, q1y] = P(u, ry * 0.3), [q2x, q2y] = P(u + 3 * s, ry * 0.3), [q3x, q3y] = P(u + 1.5 * s, ry * 0.52); g.fillTriangle(q1x, q1y, q2x, q2y, q3x, q3y); }
   // branquias
   g.lineStyle(1.4 * s, shade(BC.up, 0.6), a); for (let i = 0; i < 3; i++) { const [g1x, g1y] = P(rx * 0.3 - i * 4 * s, -ry * 0.3), [g2x, g2y] = P(rx * 0.26 - i * 4 * s, ry * 0.2); g.lineBetween(g1x, g1y, g2x, g2y); }
-  if (look.accessory && look.accessory !== 'none') { const fake = { ...j, headX: P(rx * 0.45, -ry)[0], headY: P(rx * 0.45, -ry)[1] + 10 * s, headR: 10 * s }; drawAccessory(g, glow, fake, s, look, a, d, time, {}); }
+  if (look.accessory && look.accessory !== 'none') { const fake = { ...j, headX: P(rx * 0.7, 0)[0], headY: P(rx * 0.7, 0)[1], headR: 11 * s }; drawAccessory(g, glow, fake, s, look, a, d, time, {}); }
 }
 
 // calzado por estilo; 'pointed' = punta del pie estirada en la dirección de la espinilla (patadas verticales)
